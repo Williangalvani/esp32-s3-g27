@@ -49,7 +49,7 @@ void MotorController::move_to_center() {
 }
 
 void MotorController::home() {
-    USBSerial.println("Homing...");
+    Serial.println("Homing...");
     left();
     delay(1000);
     int last_count = -100;
@@ -68,8 +68,8 @@ void MotorController::home() {
     stop();
     center = (left_most + right_most) / 2;
     range = (right_most - left_most) / 2;
-    USBSerial.println("left_most: " + String(left_most) + " right_most: " + String(right_most) + " center: " + String(center));
-    USBSerial.println("range: " + String(range));
+    Serial.println("left_most: " + String(left_most) + " right_most: " + String(right_most) + " center: " + String(center));
+    Serial.println("range: " + String(range));
     move_to_center();
 }
 

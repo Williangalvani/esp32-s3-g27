@@ -7,33 +7,33 @@ void usb_setup() {
   setCpuFrequencyMhz(240);
   
   // Initialize Serial for debugging
-  USBSerial.begin();
+  Serial.begin(115200);
   delay(1000); // Give serial time to initialize
   
   char buf[128];
   snprintf(buf, sizeof(buf), "CPU frequency set to %d MHz\n", getCpuFrequencyMhz());
-  USBSerial.print(buf);
+  Serial.print(buf);
   
-  USBSerial.println("\n==================");
-  USBSerial.println("G27 Wheel Emulator");
-  USBSerial.println("==================\n");
+  Serial.println("\n==================");
+  Serial.println("G27 Wheel Emulator");
+  Serial.println("==================\n");
 
   // Initialize USB with correct VID/PID
-  USBSerial.println("Initializing USB...");
+  Serial.println("Initializing USB...");
   USB.VID(DEV_VID);
   USB.PID(DEV_PID);
   USB.manufacturerName(DEV_MANUFACTURER_NAME);
   USB.productName(DEV_PRODUCT_NAME);
   
   if (!USB.begin()) {
-    USBSerial.println("USB initialization failed!");
+    Serial.println("USB initialization failed!");
     while (1) {
       delay(1000);
-      USBSerial.println("USB init still failed...");
+      Serial.println("USB init still failed...");
     }
   }
   
-  USBSerial.println("USB initialized successfully");
+  Serial.println("USB initialized successfully");
   delay(1000); // Give USB time to stabilize
-  USBSerial.begin(115200);  // use only for debug, it interferes with hid data sent to host when used too often; TODO disable later
+  Serial.begin(115200);  // use only for debug, it interferes with hid data sent to host when used too often; TODO disable later
 } 

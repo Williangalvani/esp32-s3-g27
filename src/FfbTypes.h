@@ -3,6 +3,7 @@
 #include "Constants.h"
 #include <stdint.h>
 
+
 // ffb commands according to Logitech Force Feedback Protocol V1.6
 enum class EnumFfbCmd {
   DOWNLOAD_FORCE = 0x00,
