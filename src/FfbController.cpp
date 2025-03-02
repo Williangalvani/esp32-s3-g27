@@ -1,12 +1,12 @@
 #include "FfbController.h"
 #include <Arduino.h>
+#include "MotorController.h"
 
-FfbController::FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range)
+FfbController::FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range, MotorController &motorControl)
   : force_current(0x7f),
-    ffb_forces_en{ 0, 0, 0, 0 } {
-  axis_wheel_cnt = axis_wheel_center;
-  axis_wheel_min = axis_wheel_center - axis_wheel_range / 2;
-  axis_wheel_max = axis_wheel_center + axis_wheel_range / 2;
+    ffb_forces_en{ 0, 0, 0, 0 },
+    motor(motorControl) {
+  // Constructor body is now empty since all initialization is done in the initializer list
 }
 
 void FfbController::apply_force(const FfbRequest &req) {
@@ -181,34 +181,29 @@ void FfbController::apply_force(const FfbRequest &req) {
 }
 
 // sets force in range 0x00 .. 0xff to force_current
-void FfbController::update(uint16_t axis_wheel_value) {
-  int16_t f = 0;
+ float FfbController::update(float axis_wheel_value) {
+  float f = 0;
   
   // Debug output - print once per second
   static uint32_t last_debug = 0;
-  bool should_debug = (millis() - last_debug >= 1000);
+  bool should_debug = (millis() - last_debug >= 500);
   if (should_debug) {
     last_debug = millis();
-    Serial.println("Updating force feedback...");
-    Serial.print("Wheel position: ");
-    Serial.println(axis_wheel_value);
+    // Serial.println("Updating force feedback...");
+    // Serial.print("Wheel position: ");
+    // Serial.println(axis_wheel_value);
   }
 
   if (ffb_default_spring_on)
   {
-    int16_t k = (axis_wheel_value > axis_wheel_cnt) ? ffb_default_spring_k1 : -ffb_default_spring_k2;
-    k *= ffb_default_spring_clip;
-    k /= 7;
-    int16_t spring_force = k * abs(axis_wheel_value - axis_wheel_cnt) * 2 / (axis_wheel_max - axis_wheel_min);
+    float spring_force = - ((float)ffb_default_spring_k1) * axis_wheel_value;
     f += spring_force;
     
     if (should_debug) {
-      Serial.print("Spring force: ");
-      Serial.print(spring_force);
-      Serial.print(", k: ");
-      Serial.print(k);
-      Serial.print(", clip: ");
-      Serial.println(ffb_default_spring_clip);
+      Serial.print(">spring: ");
+      Serial.println(spring_force);
+      Serial.print(">k1: ");
+      Serial.println(ffb_default_spring_k1);
     }
   }
   else if (should_debug) {
@@ -225,7 +220,7 @@ void FfbController::update(uint16_t axis_wheel_value) {
 
     if (f_type == EnumForceType::CONSTANT) {
       int16_t constant_force = *(&f_entry.constant.f0 + i) - 0x7f;
-      f += constant_force;
+      // f += constant_force;
       
       if (should_debug) {
         Serial.print("Constant force: ");
@@ -246,22 +241,19 @@ void FfbController::update(uint16_t axis_wheel_value) {
     }
   }
 
-  f += 0x7f;
-
-  if (f < 0x00) f = 0x00;
-  if (f > 0xff) f = 0xff;
-
   force_current = f;
   
-  if (should_debug) {
-    Serial.print("Final force value: ");
-    Serial.print(f);
-    Serial.print(" (");
-    Serial.print(f - 0x7f);
-    Serial.println(")");
-  }
+  // // Debug output
+  // if (should_debug) {
+  //   Serial.print("Final force value: ");
+  //   Serial.print(f);
+  //   Serial.print(" (");
+  //   Serial.print(f - 0x7f);
+  //   Serial.println(")");
+  // }
+  return f;
 }
 
-uint8_t FfbController::get_force() {
+float FfbController::get_force() {
   return force_current;
 } 

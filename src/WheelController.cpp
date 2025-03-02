@@ -3,7 +3,7 @@
 
 WheelController::WheelController()
   : status{},
-    ffb_controller(0x1fff, 0x3fff) {
+    ffb_controller(0x1fff, 0x3fff, motor_controller) {
   hid.addDevice(this, sizeof(hid_report_descriptor));
   status.status.buttons_0 = 0x08;
 }
@@ -21,30 +21,21 @@ void WheelController::update_ffb() {
         // Serial.println(">force: " + String(ffb_controller.get_force()));
     }
     
-    ffb_controller.update(status.status.get_axis_wheel_14bit());
-    int16_t f = this->ffb_controller.get_force();
-
-    bool dir_ccw = f > 0x7f;
-    uint8_t force_magnitude = abs(f - 0x7f) << 1;
-    if (force_magnitude > 0xf0) force_magnitude = 0xf0;
-
-    if (force_magnitude > 0) {
-        motor_controller.move(dir_ccw);
-    } else {
-        motor_controller.stop();
-    }
+    // Update the force feedback controller with the current wheel position
+    ffb_controller.update(motor_controller.get_position_zero_centered());
+    
+    // Get the current force value for debugging
+    float f = this->ffb_controller.get_force();
 
     // Debug output
     static uint32_t last_debug = 0;
-    if (millis() - last_debug >= 1000) {  // Print debug info once per second
+    if (millis() - last_debug >= 100) {  // Print debug info once per second
         last_debug = millis();
-        Serial.print("FFB Force: ");
-        Serial.print(f);
-        Serial.print(", Magnitude: ");
-        Serial.print(force_magnitude);
-        Serial.print(", Direction: ");
-        Serial.println(dir_ccw ? "CCW" : "CW");
+        Serial.println(">force: " + String(f));
+        // Serial.println(">target: " + String(0.0));
+        Serial.println(">pos: " + String(motor_controller.get_position_zero_centered()));
     }
+    motor_controller.move(f);
 }
 
 void WheelController::update_axes() {

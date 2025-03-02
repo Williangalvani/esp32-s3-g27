@@ -49,7 +49,7 @@ def main():
         # Then set autocenter to 100% strength
         print("Setting autocenter to 100% strength")
         device.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, 0xFFFF)
-        time.sleep(2)
+        time.sleep(100)
         
         # Finally, turn it off again
         print("Setting autocenter back to 0 (off)")
@@ -57,7 +57,8 @@ def main():
         
     except Exception as e:
         print(f"Error sending force feedback: {e}")
-    
+    finally:
+        device.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, 0)
     print("Done")
 
 if __name__ == "__main__":

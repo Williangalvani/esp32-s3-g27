@@ -27,13 +27,32 @@ void MotorController::stop() {
 }
 
 void MotorController::move(float force) {
-    if (force > 1) {
+    static uint32_t last_move = 0;
+    static bool should_print = false;
+    if (millis() - last_move >= 100) {
+        last_move = millis();
+        should_print = true;
+    }
+    if (should_print) {
+        Serial.println(">forceMot: " + String(force));
+    }
+    if (force > 0.01) {
+        if (should_print) {
+            Serial.println(">dir: 1");
+        }
         right();
-    } else if (force < -1) {
+    } else if (force < -0.01) {
+        if (should_print) {
+            Serial.println(">dir: -1");
+        }
         left();
     } else {
+        if (should_print) {
+            Serial.println(">dir: 0");
+        }
         stop();
     }
+    should_print = false;
 }
 
 void MotorController::move_to_center() {

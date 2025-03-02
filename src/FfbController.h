@@ -2,21 +2,18 @@
 
 #include "FfbTypes.h"
 #include <stdint.h>
-
+#include "MotorController.h"
 // computing forces to apply to the wheel ffb motor
 class FfbController {
 public:
-  FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range);
+  FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range, MotorController &motorControl);
   
   void apply_force(const FfbRequest &req);
-  void update(uint16_t axis_wheel_value);
-  uint8_t get_force();
+  float update(float axis_wheel_value);
+  float get_force();
 
-  uint16_t axis_wheel_min;
-  uint16_t axis_wheel_cnt;
-  uint16_t axis_wheel_max;
-
-  uint8_t force_current;
+  MotorController &motor;
+  float force_current;
 
   FfbRequest ffb_request;
   FfbForceType ffb_forces[4];
