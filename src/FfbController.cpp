@@ -3,7 +3,7 @@
 #include "MotorController.h"
 
 FfbController::FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range, MotorController &motorControl)
-  : force_current(0x7f),
+  : force_current(0x80),
     ffb_forces_en{ 0, 0, 0, 0 },
     motor(motorControl) {
   // Constructor body is now empty since all initialization is done in the initializer list
@@ -53,13 +53,13 @@ void FfbController::apply_force(const FfbRequest &req) {
     EnumForceType force_type = (EnumForceType)req.download_force.force_type.bytes[0];
     switch(force_type) {
       case EnumForceType::CONSTANT: 
+      {
         Serial.println("CONSTANT"); 
-        // For constant force, print the force value
-        if (f_cmd == EnumFfbCmd::DOWNLOAD_AND_PLAY_FORCE) {
-          int8_t force_value = req.download_and_play_force.force_type.constant.f0 - 0x7f;
-          Serial.print("Constant force value: ");
-          Serial.println(force_value);
-        }
+        int8_t force_value = req.download_and_play_force.force_type.constant.f0 - 0x80;
+        Serial.print("Constant force value: ");
+        Serial.println(force_value);
+      }
+
         break;
       case EnumForceType::SPRING: Serial.println("SPRING"); break;
       case EnumForceType::DAMPER: Serial.println("DAMPER"); break;
@@ -81,15 +81,6 @@ void FfbController::apply_force(const FfbRequest &req) {
         Serial.println(")");
         break;
     }
-    
-    // Print raw force data bytes
-    Serial.print("Force data: ");
-    for(int i = 0; i < 7; i++) {
-      Serial.print("0x");
-      Serial.print(req.bytes[i], HEX);
-      Serial.print(" ");
-    }
-    Serial.println();
   }
 
   if (f_cmd == EnumFfbCmd::DOWNLOAD_FORCE) {
@@ -116,7 +107,7 @@ void FfbController::apply_force(const FfbRequest &req) {
       
       // If this is a constant force, print the value
       if (req.download_and_play_force.force_type.bytes[0] == (uint8_t)EnumForceType::CONSTANT) {
-        int8_t force_value = req.download_and_play_force.force_type.constant.f0 - 0x7f;
+        int8_t force_value = req.download_and_play_force.force_type.constant.f0 - 0x80;
         Serial.print("Setting constant force value: ");
         Serial.println(force_value);
       }
@@ -206,9 +197,9 @@ void FfbController::apply_force(const FfbRequest &req) {
       Serial.println(ffb_default_spring_k1);
     }
   }
-  else if (should_debug) {
-    Serial.println("Default spring is OFF");
-  }
+  // else if (should_debug) {
+  //   Serial.println("Default spring is OFF");
+  // }
 
   for (uint8_t i = 0; i < 4; ++i) {
     bool f_en = ffb_forces_en[i];
@@ -219,8 +210,8 @@ void FfbController::apply_force(const FfbRequest &req) {
     EnumForceType f_type = (EnumForceType)f_entry.bytes[0];
 
     if (f_type == EnumForceType::CONSTANT) {
-      int16_t constant_force = *(&f_entry.constant.f0 + i) - 0x7f;
-      // f += constant_force;
+      int16_t constant_force = *(&f_entry.constant.f0 + i) - 0x80;
+      f += constant_force;
       
       if (should_debug) {
         Serial.print("Constant force: ");
