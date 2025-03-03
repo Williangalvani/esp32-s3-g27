@@ -97,7 +97,7 @@ void MotorController::home() {
 }
 
 float MotorController::get_position_zero_centered() {
-    return ((float)encoder.getCount() - center) / (range);
+    return -((float)encoder.getCount() - center) / (range);
 }
 
 int32_t MotorController::get_encoder_count() {

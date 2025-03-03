@@ -55,10 +55,10 @@ union FfbForceType {
   uint8_t bytes[DEV_FFB_REQUEST_SIZE - 1];
   struct f00_constant_t {
     uint8_t type;
-    uint8_t f0;
-    uint8_t f1;
-    uint8_t f2;
-    uint8_t f3;
+    uint8_t param0;
+    uint8_t param1;
+    uint8_t param2;
+    uint8_t param3;
     uint8_t zero;
   } constant;
   // TODO complete list

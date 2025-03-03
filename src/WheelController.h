@@ -22,6 +22,7 @@ public:
   FfbController ffb_controller;
   MotorController motor_controller;
   USBHID hid;
+  bool initialized;
 
 protected:
   // we set hid report descriptor in this callback, writing it to buffer provided
