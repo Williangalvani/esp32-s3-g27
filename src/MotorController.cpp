@@ -6,35 +6,56 @@ MotorController::MotorController()
 }
 
 void MotorController::init() {
-    pinMode(MOT_A, OUTPUT);
-    pinMode(MOT_B, OUTPUT);
+    // Configure LEDC channels for PWM control
+    ledcSetup(PWM_CHANNEL_A, PWM_FREQ, PWM_RESOLUTION);
+    ledcSetup(PWM_CHANNEL_B, PWM_FREQ, PWM_RESOLUTION);
+    
+    // Attach LEDC channels to motor pins
+    ledcAttachPin(MOT_A, PWM_CHANNEL_A);
+    ledcAttachPin(MOT_B, PWM_CHANNEL_B);
+    
+    // Initialize encoder
     encoder.attachHalfQuad(13, 14);
 }
 
 void MotorController::left() {
-    digitalWrite(MOT_A, HIGH);
-    digitalWrite(MOT_B, LOW);
+    ledcWrite(PWM_CHANNEL_A, 255);
+    ledcWrite(PWM_CHANNEL_B, 0);
 }
 
 void MotorController::right() {
-    digitalWrite(MOT_A, LOW);
-    digitalWrite(MOT_B, HIGH);
+    ledcWrite(PWM_CHANNEL_A, 0);
+    ledcWrite(PWM_CHANNEL_B, 255);
 }
 
 void MotorController::stop() {
-    digitalWrite(MOT_A, LOW);
-    digitalWrite(MOT_B, LOW);
+    ledcWrite(PWM_CHANNEL_A, 0);
+    ledcWrite(PWM_CHANNEL_B, 0);
 }
 
 void MotorController::move(float force) {
+    // Constrain force to be between -1 and 1
+    force = constrain(force, -1.0, 1.0);
+    
+    // Calculate PWM value (0-255) based on the absolute value of force
+    int pwm = abs(force) * 255;
+    int deadband = 150;
+    
+    // Ensure we don't exceed 255 when adding deadband
+    int pwm_with_deadband = min(deadband + pwm, 255);
+    
     if (force > 0.01) {
-        right();
+        // Move right with proportional speed
+        ledcWrite(PWM_CHANNEL_A, 0);
+        ledcWrite(PWM_CHANNEL_B, pwm_with_deadband);
     } else if (force < -0.01) {
-
-        left();
+        // Move left with proportional speed
+        ledcWrite(PWM_CHANNEL_A, pwm_with_deadband);
+        ledcWrite(PWM_CHANNEL_B, 0);
     } else {
-
-        stop();
+        // Stop the motor
+        ledcWrite(PWM_CHANNEL_A, 0);
+        ledcWrite(PWM_CHANNEL_B, 0);
     }
 }
 

@@ -13,11 +13,21 @@ union WheelStatus {
     uint8_t buttons_2;
     uint8_t axis_wheel_lsb6_and_btns2;
     uint8_t axis_wheel_msb;
-    uint8_t axis_throttle;
-    uint8_t axis_brake;
-    uint8_t axis_clutch;
+    int8_t axis_throttle;
+    int8_t axis_brake;
+    int8_t axis_clutch;
     uint8_t vendor_specific[3];  // not sure what it is, but probably not important
 
+    void init() {
+      buttons_0 = 0x08;
+      buttons_1 = 0x00;
+      buttons_2 = 0x00;
+      axis_wheel_lsb6_and_btns2 = 0x0000;
+      axis_wheel_msb = 0x00;
+      axis_throttle = 0x00;
+      axis_brake = 0x00;
+      axis_clutch = 0x00;
+    }
     // center_zero == true : v range -1 .. 1
     // center_zero == false : v range 0 .. 1
     void set_axis_wheel_float(float v, bool center_zero) {
@@ -28,6 +38,7 @@ union WheelStatus {
       v = v * 0x3fff;
 
       set_axis_wheel_14bit((uint16_t)v);
+      axis_throttle = v / 256;
     }
 
     void set_axis_wheel_14bit(uint16_t v) {

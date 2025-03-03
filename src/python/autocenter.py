@@ -74,18 +74,28 @@ def set_autocenter(device, strength, duration=2):
         print(f"Error setting autocenter: {e}")
         return False
 
-def move_to_position(device, position, strength=100, duration=2):
-    """Move wheel to a specific position (-100 to 100, where 0 is center)"""
+def apply_force_in_direction(device, force_direction, strength=100, duration=2):
+    """Apply a constant force to the wheel in a specific direction
+    
+    Args:
+        device: The input device
+        force_direction: Force direction from -100 (full left) to 100 (full right), 0 is no force
+        strength: Force strength as percentage (0-100)
+        duration: How long to apply the force in seconds
+    
+    The wheel will move in the specified direction while the force is applied,
+    but there is no guarantee it will stop at any specific position.
+    """
     try:
-        # Validate position range
-        position = max(-100, min(100, position))
+        # Validate force_direction range
+        force_direction = max(-100, min(100, force_direction))
         
         # Calculate direction and level
         # For constant effects, direction determines the direction of the force
         # 0 degrees = left, 90 degrees = down, 180 degrees = right, 270 degrees = up
         # We'll use 0 for left and 0xC000 (180 degrees) for right
-        direction = 0xC000 if position > 0 else 0
-        level = int(abs(position) * 32767 / 100)  # Scale to 0-32767 range
+        direction = 0xC000 if force_direction > 0 else -1
+        level = int(abs(force_direction) * 32767 / 100)  # Scale to 0-32767 range
         
         # Create envelope and constant effect
         envelope = ff.Envelope(500, 32767, 500, 32767)
@@ -103,7 +113,7 @@ def move_to_position(device, position, strength=100, duration=2):
         
         # Upload the effect to the device
         effect_id = device.upload_effect(effect)
-        print(f"Moving wheel to position {position} with {strength}% strength")
+        print(f"Applying {'right' if force_direction > 0 else 'left'} force of {abs(force_direction)}% with {strength}% strength for {duration}s")
         
         # Set the gain (strength)
         device.write(ecodes.EV_FF, ecodes.FF_GAIN, 0xFFFF * strength // 100)
@@ -120,32 +130,57 @@ def move_to_position(device, position, strength=100, duration=2):
         device.erase_effect(effect_id)
         return True
     except Exception as e:
-        print(f"Error moving wheel: {e}")
+        print(f"Error applying force: {e}")
+        return False
+
+def stop_all_forces(device):
+    """Stop all force feedback effects on the device
+    
+    This function will:
+    1. Turn off autocenter
+    2. Send a STOP_FORCE command to stop all active effects
+    """
+    try:
+        print("Stopping all force feedback effects...")
+        # Turn off autocenter
+        device.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, 0)
+        
+        # Send STOP_ALL_FORCES (FF_STOP_ALL in evdev)
+        # This will stop all effects that are currently playing
+        device.write(ecodes.EV_FF, ecodes.FF_STOP_ALL, 0)
+        
+        print("All forces stopped")
+        return True
+    except Exception as e:
+        print(f"Error stopping forces: {e}")
         return False
 
 def test_autocenter(device):
-    """Run the original autocenter test sequence"""
-    try:
-        # First, set autocenter to 0 (off)
-        set_autocenter(device, 0)
-        time.sleep(2)
-        
-        # Then set autocenter to 50% strength
-        set_autocenter(device, 50)
-        time.sleep(2)
-        
-        # Then set autocenter to 100% strength
-        set_autocenter(device, 100)
-        time.sleep(2)
-        
-        # Finally, turn it off again
-        set_autocenter(device, 0)
-        
-    except Exception as e:
-        print(f"Error in autocenter test: {e}")
-    finally:
-        device.write(ecodes.EV_FF, ecodes.FF_AUTOCENTER, 0)
-    print("Autocenter test completed")
+    """Test autocenter functionality"""
+    print("Testing autocenter...")
+    
+    # Turn off autocenter
+    set_autocenter(device, 0)
+    time.sleep(1)
+    
+    # Move wheel to the right
+    print("Applying force to the right...")
+    apply_force_in_direction(device, 100, 100, 2)
+    time.sleep(1)
+    
+    # Move wheel to the left
+    print("Applying force to the left...")
+    apply_force_in_direction(device, -100, 100, 2)
+    time.sleep(1)
+    
+    # Turn on autocenter
+    print("Turning on autocenter...")
+    set_autocenter(device, 100)
+    time.sleep(3)
+    
+    # Turn off autocenter
+    print("Turning off autocenter...")
+    set_autocenter(device, 0)
 
 def main():
     parser = argparse.ArgumentParser(description='Force feedback testing tool')
@@ -167,6 +202,9 @@ def main():
                                help='Effect strength (0-100)')
     position_parser.add_argument('--duration', '-d', type=float, default=2,
                                help='Duration in seconds')
+    
+    # Stop command
+    stop_parser = subparsers.add_parser('stop', help='Stop all force feedback effects')
     
     # Test command
     test_parser = subparsers.add_parser('test', help='Run predefined tests')
@@ -192,7 +230,10 @@ def main():
             set_autocenter(device, args.strength, args.duration)
         
         elif args.command == 'position':
-            move_to_position(device, args.position, args.strength, args.duration)
+            apply_force_in_direction(device, args.position, args.strength, args.duration)
+        
+        elif args.command == 'stop':
+            stop_all_forces(device)
         
         elif args.command == 'test':
             if args.test_name == 'autocenter':

@@ -8,10 +8,10 @@ class FfbController {
 public:
   FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range, MotorController &motorControl);
   
-  void apply_force(const FfbRequest &req);
+  void apply_force();
   float update(float axis_wheel_value);
   float get_force();
-
+  void printForce(uint8_t index, bool enabled, EnumForceType force_type);
   MotorController &motor;
   float force_current;
 

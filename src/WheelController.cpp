@@ -9,8 +9,9 @@ WheelController::WheelController()
 }
 
 void WheelController::init() {
-  motor_controller.init();
-  hid.begin();
+    motor_controller.init();
+    hid.begin();
+    status.status.init();
 }
 
 void WheelController::update_ffb() {
@@ -52,7 +53,6 @@ void WheelController::update_axes() {
       status.status.buttons_0 = 0x08;
     }
     
-    // Serial.println(">pos:" + String(motor_controller.get_encoder_count()));
   }
 }
 
@@ -112,8 +112,6 @@ uint16_t WheelController::_onGetFeature(uint8_t report_id, uint8_t *buffer, uint
 
 void WheelController::_onSetFeature(uint8_t report_id, const uint8_t *buffer, uint16_t len) {
   Serial.println("onSetFeature");
-  if (len != sizeof(FfbRequest)) return;
-  ffb_controller.apply_force(*((const FfbRequest *)buffer));
   Serial.print("[IN]["); Serial.print(report_id); Serial.print("] ");
   for (uint16_t i = 0; i < len; ++i)
   {
@@ -125,219 +123,97 @@ void WheelController::_onSetFeature(uint8_t report_id, const uint8_t *buffer, ui
 }
 
 void WheelController::_onOutput(uint8_t report_id, const uint8_t *buffer, uint16_t len) {
-  // Add debug output
-  Serial.print("Received output report: ID=");
-  Serial.print(report_id);
-  Serial.print(", Length=");
-  Serial.println(len);
-  
-  // Print the entire buffer for debugging
-  Serial.print("Buffer contents: ");
-  for (uint16_t i = 0; i < len; ++i) {
-    if (buffer[i] < 0x10) Serial.print(0);
-    Serial.print(buffer[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
   
   // Process force feedback commands
   if (report_id == 0 && len >= 1) {
     uint8_t cmd_byte = buffer[0];
 
     // Check for pylinuxwheel commands
-    bool is_pylinuxwheel = false;
-    if (cmd_byte >= 0xF0) {
-      is_pylinuxwheel = true;
-      Serial.print(cmd_byte, HEX);
-      Serial.println(cmd_byte & 0x0F, HEX);
-      cmd_byte &= 0x0F;
+    cmd_byte &= 0x0F;
+    uint8_t forces_mask = buffer[0] & 0x10;
+    // print force mask in binary, only the first 4 bits
+    Serial.print("Force mask: ");
+    for (int i = 0; i < 4; i++) {
+      Serial.print((forces_mask >> i) & 1);
+      Serial.print(" ");
     }
-    
-    // Create a copy of the buffer for translation
-    uint8_t translated_buffer[len];
-    memcpy(translated_buffer, buffer, len);
-    bool translated = false;
-    
+    Serial.println();
+    bool fully_parsed = false;   // this means we parsed, not handled
+    if (cmd_byte == (uint8_t)EnumFfbCmd::DOWNLOAD_FORCE) { // FF_CONSTANT
+      Serial.println("Detected DOWNLOAD_FORCE command");
+    } else if (cmd_byte == (uint8_t)EnumFfbCmd::DOWNLOAD_AND_PLAY_FORCE) { // FF_CONSTANT
+      Serial.println("Detected DOWNLOAD_AND_PLAY_FORCE command");
+    }
     // Translate Linux input subsystem commands to Logitech protocol commands
-    if (cmd_byte == (uint8_t)EnumFfbCmd::PLAY_FORCE) { // FF_CONSTANT
-      Serial.println("Detected FF_CONSTANT command");
-      
-      // Print the entire buffer for detailed debugging
-      Serial.println("FF_CONSTANT full buffer:");
-      for (uint16_t i = 0; i < len; ++i) {
-        Serial.print("Byte ");
-        Serial.print(i);
-        Serial.print(": 0x");
-        if (buffer[i] < 0x10) Serial.print("0");
-        Serial.print(buffer[i], HEX);
-        Serial.print(" (");
-        Serial.print(buffer[i]);
-        Serial.println(")");
-      }
-      
-      // Extract and print direction
-      uint16_t direction = buffer[1] | (buffer[2] << 8);
-      Serial.print("Direction: 0x");
-      Serial.print(direction, HEX);
-      Serial.print(" (");
-      Serial.print(direction);
-      Serial.println(")");
-      
-      // Try to extract level/magnitude
-      if (len >= 8) {
-        // Try different possible locations for the level
-        int16_t level1 = (int16_t)(buffer[3] | (buffer[4] << 8));
-        Serial.print("Level (bytes 3-4): 0x");
-        Serial.print(level1, HEX);
-        Serial.print(" (");
-        Serial.print(level1);
-        Serial.println(")");
-        
-        int16_t level2 = (int16_t)(buffer[5] | (buffer[6] << 8));
-        Serial.print("Level (bytes 5-6): 0x");
-        Serial.print(level2, HEX);
-        Serial.print(" (");
-        Serial.print(level2);
-        Serial.println(")");
-        
-        int16_t level3 = (int16_t)(buffer[7] | (buffer[8] << 8));
-        Serial.print("Level (bytes 7-8): 0x");
-        Serial.print(level3, HEX);
-        Serial.print(" (");
-        Serial.print(level3);
-        Serial.println(")");
-      }
-      
-      // Print the translated command we're going to send
-      Serial.println("Translating to DOWNLOAD_AND_PLAY_FORCE with CONSTANT");
-      
-      translated_buffer[0] = 0x11; // DOWNLOAD_AND_PLAY_FORCE (0x01) with force slot 0 enabled (0x10)
-      translated_buffer[1] = 0x00; // CONSTANT force type
-      
-      // Set force value based on direction
-      uint8_t force_value = 0x7F; // Default to center (no force)
-      
-      // If direction indicates right (0x8000 or 0xC000), increase force
-      if (direction >= 0x8000) {
-        force_value = 0xBF; // Positive force (right)
-        Serial.println("Direction indicates RIGHT");
-      } 
-      // If direction indicates left (0x0000 or 0x4000), decrease force
-      else if (direction < 0x4000) {
-        force_value = 0x3F; // Negative force (left)
-        Serial.println("Direction indicates LEFT");
-      }
-      else {
-        Serial.println("Direction indicates CENTER");
-      }
-      
-      translated_buffer[2] = force_value;
-      Serial.print("Setting force value to: 0x");
-      Serial.println(force_value, HEX);
-      
-      translated = true;
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::PLAY_FORCE) { // FF_CONSTANT
+      Serial.println("Detected PLAY_FORCE command");
+
     }
-    // Handle pylinuxwheel specific commands
-    else if (is_pylinuxwheel) {
-      if (cmd_byte == (uint8_t)EnumFfbCmd::DEFAULT_SPRING_OFF) { // 0xF5 - DEFAULT_SPRING_OFF
-        Serial.println("Translating to DEFAULT_SPRING_OFF");
-        
-        // Print the entire buffer for detailed debugging
-        Serial.println("DEFAULT_SPRING_OFF full buffer:");
-        for (uint16_t i = 0; i < len; ++i) {
-          Serial.print("Byte ");
-          Serial.print(i);
-          Serial.print(": 0x");
-          if (buffer[i] < 0x10) Serial.print("0");
-          Serial.print(buffer[i], HEX);
-          Serial.print(" (");
-          Serial.print(buffer[i]);
-          Serial.println(")");
-        }
-        
-        // Translate to proper Logitech protocol command
-        // The command byte should be 0x05 (DEFAULT_SPRING_OFF)
-        // No force slots should be enabled for this command
-        translated_buffer[0] = 0x05; // DEFAULT_SPRING_OFF
-        for (int i = 1; i < len; i++) {
-          translated_buffer[i] = 0x00; // Clear the rest of the buffer
-        }
-        
-        translated = true;
-      }
-      else if (cmd_byte == (uint8_t)EnumFfbCmd::DEFAULT_SPRING_ON) { // 0xF4 - DEFAULT_SPRING_ON
-        Serial.println("Translating to DEFAULT_SPRING_ON");
-        
-        // Print the entire buffer for detailed debugging
-        Serial.println("DEFAULT_SPRING_ON full buffer:");
-        for (uint16_t i = 0; i < len; ++i) {
-          Serial.print("Byte ");
-          Serial.print(i);
-          Serial.print(": 0x");
-          if (buffer[i] < 0x10) Serial.print("0");
-          Serial.print(buffer[i], HEX);
-          Serial.print(" (");
-          Serial.print(buffer[i]);
-          Serial.println(")");
-        }
-        
-        // Translate to proper Logitech protocol command
-        // The command byte should be 0x04 (DEFAULT_SPRING_ON)
-        // No force slots should be enabled for this command
-        translated_buffer[0] = 0x04; // DEFAULT_SPRING_ON
-        for (int i = 1; i < len; i++) {
-          translated_buffer[i] = 0x00; // Clear the rest of the buffer
-        }
-        
-        translated = true;
-      }
-      else if (cmd_byte == 0x8) { // 0xF8 - Constant force
-        Serial.println("Translating pylinuxwheel constant force command");
-        
-        // Print the entire buffer for detailed debugging
-        Serial.println("CONSTANT force full buffer:");
-        for (uint16_t i = 0; i < len; ++i) {
-          Serial.print("Byte ");
-          Serial.print(i);
-          Serial.print(": 0x");
-          if (buffer[i] < 0x10) Serial.print("0");
-          Serial.print(buffer[i], HEX);
-          Serial.print(" (");
-          Serial.print(buffer[i]);
-          Serial.println(")");
-        }
-        
-        // Translate to proper Logitech protocol command
-        // The command byte should be 0x11 (DOWNLOAD_AND_PLAY_FORCE with force slot 0 enabled)
-        // The force type byte should be 0x00 (CONSTANT)
-        translated_buffer[0] = 0x11; // DOWNLOAD_AND_PLAY_FORCE (0x01) with force slot 0 enabled (0x10)
-        translated_buffer[1] = 0x00; // CONSTANT force type
-        
-        // The force value is in the second byte of the original command
-        if (len >= 2) {
-          // For constant forces, the value is centered at 0x7F (127)
-          // 0x7F = no force, <0x7F = left force, >0x7F = right force
-          translated_buffer[2] = buffer[1]; // Force value
-          Serial.print("Force value: 0x");
-          Serial.print(buffer[1], HEX);
-          Serial.print(" (");
-          Serial.print((int8_t)(buffer[1] - 0x80)); // Print as signed value relative to center
-          Serial.println(")");
-        } else {
-          translated_buffer[2] = 0x80; // Default to center (no force)
-          Serial.println("No force value provided, defaulting to center");
-        }
-        
-        // Clear the rest of the buffer
-        for (int i = 3; i < len; i++) {
-          translated_buffer[i] = 0x00;
-        }
-        
-        translated = true;
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::STOP_FORCE ) { // 0xF5 - DEFAULT_SPRING_OFF
+      Serial.println("Detected STOP_FORCE command");
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::DEFAULT_SPRING_ON) { // 0xF4 - DEFAULT_SPRING_ON
+      Serial.println("Detected DEFAULT_SPRING_ON command");
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::DEFAULT_SPRING_OFF) { // 0xF5 - DEFAULT_SPRING_OFF
+      Serial.println("Detected DEFAULT_SPRING_OFF command");
+      fully_parsed = true;
+       // we are ignoring the x;y selection, which should be fine as we only have one axis
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::REFRESH_FORCE) { // 0x0C - REFRESH_FORCE
+      Serial.println("Detected REFRESH_FORCE command");
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::FIXED_TIME_LOOP) { // 0x0D - FIXED_TIME_LOOP
+      Serial.println("Detected FIXED_TIME_LOOP command");
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::SET_DEFAULT_SPRING) { // 0x0E - SET_DEFAULT_SPRING
+      Serial.println("Detected SET_DEFAULT_SPRING command");
+    }
+    else if (cmd_byte == (uint8_t)EnumFfbCmd::SET_DEAD_BAND) { // 0x0F - SET_DEAD_BAND
+      Serial.println("Detected SET_DEAD_BAND command");
+    }
+    else if (buffer[0] == (uint8_t)EnumFfbCmd::EXTENDED_COMMAND) {
+      uint8_t extended_cmd = buffer[1];
+      if (extended_cmd == (uint8_t)EnumExtendedCommand::CHANGE_MODE_TO_DRIVING_FORCE_PRO) {
+        Serial.println("Detected CHANGE_MODE_TO_DRIVING_FORCE_PRO command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::CHANGE_WHEEL_RANGE_TO_200_DEGREES) {
+        Serial.println("Detected CHANGE_WHEEL_RANGE_TO_200_DEGREES command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::CHANGE_WHEEL_RANGE_TO_900_DEGREES) {
+        Serial.println("Detected CHANGE_WHEEL_RANGE_TO_900_DEGREES command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::CHANGE_DEVICE_MODE) {
+        Serial.println("Detected CHANGE_DEVICE_MODE command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::REVERT_IDENTITY) {
+        Serial.println("Detected REVERT_IDENTITY command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::SWITCH_TO_G25_IDENTITY_WITH_USB_DETACH) {
+        Serial.println("Detected SWITCH_TO_G25_IDENTITY_WITH_USB_DETACH command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::SWITCH_TO_G25_IDENTITY_WITHOUT_USB_DETACH) {
+        Serial.println("Detected SWITCH_TO_G25_IDENTITY_WITHOUT_USB_DETACH command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::SET_RPM_LEDS) {
+        Serial.println("Detected SET_RPM_LEDS command");
+      } else if (extended_cmd == (uint8_t)EnumExtendedCommand::WHEEL_RANGE_CHANGE) {
+        Serial.println("Detected WHEEL_RANGE_CHANGE command");
       }
     }
-    
+    else {
+      Serial.print("Unknown command ");
+      Serial.println(buffer[0], HEX);
+    }
+    if (!fully_parsed) {
+        Serial.print("Buffer: ");
+        for (uint16_t i = 0; i < len; ++i) {
+            if (buffer[i] < 0x10) Serial.print(0);
+            Serial.print(buffer[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+        Serial.print("decimal: ");
+        for (uint16_t i = 0; i < len; ++i) {
+          Serial.print(buffer[i]);
+          Serial.print(" ");
+        }
+        Serial.println();
+    }
     // Apply the translated force
-    ffb_controller.apply_force(*((const FfbRequest *)translated_buffer));
+    ffb_controller.apply_force();
   }
 } 

@@ -4,6 +4,12 @@
 #include <Arduino.h>
 #include "Constants.h"
 
+// PWM configuration for motor control
+#define PWM_FREQ 20000  // 20kHz
+#define PWM_RESOLUTION 8  // 8-bit resolution (0-255)
+#define PWM_CHANNEL_A 0   // LEDC channel for MOT_A
+#define PWM_CHANNEL_B 1   // LEDC channel for MOT_B
+
 class MotorController {
 public:
     MotorController();
