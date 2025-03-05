@@ -92,7 +92,7 @@ void WheelController::sendState() {
     // Use direct TinyUSB API to send data on the IN endpoint
     if (tud_hid_ready()) {
       // Send data from device to host on IN endpoint (0x81)
-      if (!tud_hid_report(DEV_REPORT_ID, status.bytes, sizeof(status.bytes))) {
+      if (!tud_hid_n_report(0, DEV_REPORT_ID, status.bytes, sizeof(status.bytes))) {
         failed_sends++;
         if (failed_sends % 100 == 1) { // Log only occasionally
           Serial.println("Failed to send state to host on IN endpoint");
