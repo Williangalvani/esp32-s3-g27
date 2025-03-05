@@ -155,6 +155,88 @@ def stop_all_forces(device):
         print(f"Error stopping forces: {e}")
         return False
 
+def apply_damper_effect(device, strength=100, duration=2):
+    """Apply a damper effect to the wheel
+    
+    Args:
+        device: The input device
+        strength: Effect strength as percentage (0-100)
+        duration: How long to apply the effect in seconds
+    """
+    try:
+        # Create damper effect
+        effect = ff.Effect(
+            ecodes.FF_DAMPER,   # effect type
+            -1,                 # effect id (assigned by device)
+            0,                  # direction (not used for damper)
+            ff.Trigger(0, 0),   # no trigger
+            ff.Replay(int(duration * 1000), 0),  # duration in ms, delay
+            ff.EffectType()     # empty effect type as damper doesn't need additional parameters
+        )
+        
+        # Upload and play the effect
+        effect_id = device.upload_effect(effect)
+        print(f"Applying damper effect with {strength}% strength for {duration}s")
+        
+        # Set the gain (strength)
+        device.write(ecodes.EV_FF, ecodes.FF_GAIN, 0xFFFF * strength // 100)
+        
+        # Play the effect
+        device.write(ecodes.EV_FF, effect_id, 1)
+        
+        # Wait for the specified duration
+        if duration > 0:
+            time.sleep(duration)
+            
+        # Stop and remove the effect
+        device.write(ecodes.EV_FF, effect_id, 0)
+        device.erase_effect(effect_id)
+        return True
+    except Exception as e:
+        print(f"Error applying damper effect: {e}")
+        return False
+
+def apply_friction_effect(device, strength=100, duration=2):
+    """Apply a friction effect to the wheel
+    
+    Args:
+        device: The input device
+        strength: Effect strength as percentage (0-100)
+        duration: How long to apply the effect in seconds
+    """
+    try:
+        # Create friction effect
+        effect = ff.Effect(
+            ecodes.FF_FRICTION, # effect type
+            -1,                 # effect id (assigned by device)
+            0,                  # direction (not used for friction)
+            ff.Trigger(0, 0),   # no trigger
+            ff.Replay(int(duration * 1000), 0),  # duration in ms, delay
+            ff.EffectType()     # empty effect type as friction doesn't need additional parameters
+        )
+        
+        # Upload and play the effect
+        effect_id = device.upload_effect(effect)
+        print(f"Applying friction effect with {strength}% strength for {duration}s")
+        
+        # Set the gain (strength)
+        device.write(ecodes.EV_FF, ecodes.FF_GAIN, 0xFFFF * strength // 100)
+        
+        # Play the effect
+        device.write(ecodes.EV_FF, effect_id, 1)
+        
+        # Wait for the specified duration
+        if duration > 0:
+            time.sleep(duration)
+            
+        # Stop and remove the effect
+        device.write(ecodes.EV_FF, effect_id, 0)
+        device.erase_effect(effect_id)
+        return True
+    except Exception as e:
+        print(f"Error applying friction effect: {e}")
+        return False
+
 def test_autocenter(device):
     """Test autocenter functionality"""
     print("Testing autocenter...")
@@ -182,6 +264,73 @@ def test_autocenter(device):
     print("Turning off autocenter...")
     set_autocenter(device, 0)
 
+def test_damper(device):
+    """Test damper functionality"""
+    print("Testing damper effect...")
+    
+    # Apply damper effect at different strengths
+    for strength in [25, 50, 75, 100]:
+        print(f"\nTesting {strength}% strength...")
+        apply_damper_effect(device, strength, 3)
+        time.sleep(1)
+
+def test_friction(device):
+    """Test friction functionality"""
+    print("Testing friction effect...")
+    
+    # Apply friction effect at different strengths
+    for strength in [25, 50, 75, 100]:
+        print(f"\nTesting {strength}% strength...")
+        apply_friction_effect(device, strength, 3)
+        time.sleep(1)
+
+def test_range(device):
+    """Test range functionality"""
+    print("Testing wheel range settings...")
+    
+    # Test different range values
+    test_ranges = [180, 360, 540, 900]
+    for range_value in test_ranges:
+        print(f"\nSetting range to {range_value} degrees...")
+        set_range(device, range_value)
+        print("Try turning the wheel to feel the difference")
+        time.sleep(5)
+    
+    # Reset to a common default (540 degrees)
+    print("\nResetting to default range (540 degrees)...")
+    set_range(device, 540)
+
+def test_constant_force(device):
+    """Test constant force functionality"""
+    print("Testing constant force effects...")
+    
+    # Make sure autocenter is off
+    set_autocenter(device, 0)
+    time.sleep(1)
+    
+    # Test different directions and strengths
+    directions = [
+        (100, "right, full strength"),
+        (50, "right, half strength"),
+        (-50, "left, half strength"),
+        (-100, "left, full strength")
+    ]
+    
+    for force_direction, description in directions:
+        print(f"\nApplying constant force to the {description}...")
+        apply_force_in_direction(device, force_direction, 100, 3)
+        time.sleep(1)
+    
+    # Test different strength levels in one direction
+    print("\nTesting different strength levels (right direction)...")
+    for strength in [25, 50, 75, 100]:
+        print(f"Applying {strength}% strength...")
+        apply_force_in_direction(device, 100, strength, 2)
+        time.sleep(1)
+    
+    # Reset by stopping all forces
+    stop_all_forces(device)
+
 def main():
     parser = argparse.ArgumentParser(description='Force feedback testing tool')
     
@@ -208,8 +357,21 @@ def main():
     
     # Test command
     test_parser = subparsers.add_parser('test', help='Run predefined tests')
-    test_parser.add_argument('test_name', choices=['autocenter'], 
+    test_parser.add_argument('test_name', choices=['autocenter', 'damper', 'friction', 'range', 'constant'], 
                            help='Test to run')
+    
+    # Add new effect parsers
+    damper_parser = subparsers.add_parser('damper', help='Apply damper effect')
+    damper_parser.add_argument('--strength', '-s', type=int, default=100,
+                             help='Effect strength (0-100)')
+    damper_parser.add_argument('--duration', '-d', type=float, default=2,
+                             help='Duration in seconds')
+    
+    friction_parser = subparsers.add_parser('friction', help='Apply friction effect')
+    friction_parser.add_argument('--strength', '-s', type=int, default=100,
+                               help='Effect strength (0-100)')
+    friction_parser.add_argument('--duration', '-d', type=float, default=2,
+                               help='Duration in seconds')
     
     # Parse arguments
     args = parser.parse_args()
@@ -232,12 +394,26 @@ def main():
         elif args.command == 'position':
             apply_force_in_direction(device, args.position, args.strength, args.duration)
         
+        elif args.command == 'damper':
+            apply_damper_effect(device, args.strength, args.duration)
+        
+        elif args.command == 'friction':
+            apply_friction_effect(device, args.strength, args.duration)
+        
         elif args.command == 'stop':
             stop_all_forces(device)
         
         elif args.command == 'test':
             if args.test_name == 'autocenter':
                 test_autocenter(device)
+            elif args.test_name == 'damper':
+                test_damper(device)
+            elif args.test_name == 'friction':
+                test_friction(device)
+            elif args.test_name == 'range':
+                test_range(device)
+            elif args.test_name == 'constant':
+                test_constant_force(device)
     
     except Exception as e:
         print(f"Error: {e}")

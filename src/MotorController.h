@@ -19,8 +19,10 @@ public:
     void stop();
     void home();
     void move(float force);
+    void set_wheel_range(uint16_t wheel_range);
     void move_to_center();
     float get_position_zero_centered();
+    float get_position_zero_centered_normalized();
     int32_t get_encoder_count();
     
 private:
@@ -29,4 +31,6 @@ private:
     int right_most;
     int center;
     int range;
+    float wheel_range;
+    float wheel_range_normalized; // 0 to 1
 }; 

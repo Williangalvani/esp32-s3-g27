@@ -16,6 +16,7 @@ void MotorController::init() {
     
     // Initialize encoder
     encoder.attachHalfQuad(13, 14);
+    wheel_range = 900.0;
 }
 
 void MotorController::left() {
@@ -96,8 +97,17 @@ void MotorController::home() {
     move_to_center();
 }
 
+void MotorController::set_wheel_range(uint16_t new_range) {
+    wheel_range = new_range;
+    wheel_range_normalized = (float)wheel_range / 900.0;
+}
+
 float MotorController::get_position_zero_centered() {
     return -((float)encoder.getCount() - center) / (range);
+}
+
+float MotorController::get_position_zero_centered_normalized() {
+    return get_position_zero_centered();
 }
 
 int32_t MotorController::get_encoder_count() {

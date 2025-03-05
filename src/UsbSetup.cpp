@@ -22,8 +22,12 @@ void usb_setup() {
   Serial.println("Initializing USB...");
   USB.VID(DEV_VID);
   USB.PID(DEV_PID);
-  USB.manufacturerName(DEV_MANUFACTURER_NAME);
+  USB.manufacturerName("");
+  USB.firmwareVersion(0x1239);
   USB.productName(DEV_PRODUCT_NAME);
+  USB.usbClass(0);
+  USB.usbSubClass(0);
+  USB.usbProtocol(0);
   
   if (!USB.begin()) {
     Serial.println("USB initialization failed!");

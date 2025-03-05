@@ -16,7 +16,9 @@ union WheelStatus {
     int8_t axis_throttle;
     int8_t axis_brake;
     int8_t axis_clutch;
-    uint8_t vendor_specific[3];  // not sure what it is, but probably not important
+    uint8_t shifter_x;  // not sure what it is, but probably not important
+    uint8_t shifter_y;  // not sure what it is, but probably not important
+    uint8_t misc;  // not sure what it is, but probably not important
 
     void init() {
       buttons_0 = 0x08;
@@ -24,9 +26,12 @@ union WheelStatus {
       buttons_2 = 0x00;
       axis_wheel_lsb6_and_btns2 = 0x0000;
       axis_wheel_msb = 0x00;
-      axis_throttle = 0x00;
-      axis_brake = 0x00;
-      axis_clutch = 0x00;
+      axis_throttle = 0x30;
+      axis_brake = 0x90;
+      axis_clutch = 0xFF;
+      shifter_x = 0x80;
+      shifter_y = 0x80;
+      misc = 0b10011100; // todo: implement missing from https://gimx.fr/wiki/index.php?title=G27_PS3
     }
     // center_zero == true : v range -1 .. 1
     // center_zero == false : v range 0 .. 1
@@ -36,9 +41,7 @@ union WheelStatus {
       if (v > 1.0f) v = 1.0f;
 
       v = v * 0x3fff;
-
       set_axis_wheel_14bit((uint16_t)v);
-      axis_throttle = v / 256;
     }
 
     void set_axis_wheel_14bit(uint16_t v) {

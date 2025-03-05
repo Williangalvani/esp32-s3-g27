@@ -15,8 +15,8 @@
 // Device constants
 #define DEV_VID (0x046d)
 #define DEV_PID (0xc29b)
-#define DEV_PRODUCT_NAME "G27_emu"
-#define DEV_MANUFACTURER_NAME "MB"
+#define DEV_PRODUCT_NAME "G27 Racing Wheel"
+#define DEV_MANUFACTURER_NAME "Logitech, Inc."
 #define DEV_REPORT_ID (0)
 #define DEV_REPORT_SIZE (11)
 #define DEV_FFB_REQUEST_SIZE (7)

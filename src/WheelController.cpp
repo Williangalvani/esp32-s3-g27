@@ -4,9 +4,13 @@
 
 WheelController::WheelController()
     : status{},
-      ffb_controller(0x1fff, 0x3fff, motor_controller)
+      ffb_controller(motor_controller)
 {
-  hid.addDevice(this, sizeof(hid_report_descriptor));
+  motor_controller.init();
+  if (!hid.addDevice(this, sizeof(hid_report_descriptor))) {
+    Serial.println("Failed to add device");
+  }
+  Serial.println("Device added");
   status.status.buttons_0 = 0x08;
 }
 
@@ -14,8 +18,8 @@ void WheelController::init()
 {
 
   initialized = false;
-  motor_controller.init();
   hid.begin();
+  Serial.println("HID began");
   status.status.init();
   initialized = true;
 }
@@ -26,78 +30,28 @@ void WheelController::update_ffb()
   ffb_controller.update(motor_controller.get_position_zero_centered());
   // Get the current force value for debugging
   float f = this->ffb_controller.get_force();
-
   motor_controller.move(f);
 }
 
 void WheelController::update_axes()
 {
   update_axis_wheel();
-
-  // Randomly toggle button 0 every ~500ms to verify HID updates
-  static uint32_t last_toggle = 0;
-  if (millis() - last_toggle >= 500)
-  {
-    last_toggle = millis();
-    // Randomly set or clear bit 0 of buttons_0
-    if (status.status.buttons_0 == 0x08)
-    {
-      status.status.buttons_0 = 0x00;
-    }
-    else
-    {
-      status.status.buttons_0 = 0x08;
-    }
-  }
 }
 
 void WheelController::update_axis_wheel()
 {
-  status.status.set_axis_wheel_float(motor_controller.get_position_zero_centered(), true);
+  status.status.axis_clutch = 0x80 + 100 * sin(millis() / 1000.0);
+  status.status.axis_brake = 0x80 + 100 * sin(millis() / 1000.0);
+  status.status.axis_throttle = 0x80 + 100 * sin(millis() / 1000.0);
+  status.status.buttons_0 = (millis() / 1000) % 2 ? 0x08 : 0x01;
+  status.status.set_axis_wheel_float(motor_controller.get_position_zero_centered_normalized(), true);
 }
 
-void WheelController::sendState()
-{
-  if (hid.ready())
-  {
-    // Implement retry mechanism for SendReport
-    const int MAX_RETRIES = 3;
-    int retries = 0;
-    bool success = false;
+void WheelController::sendState() {
+  uint8_t ffb_force_req = 0;
 
-    while (!success && retries < MAX_RETRIES)
-    {
-      // Try to send the report
-      success = hid.SendReport(DEV_REPORT_ID, status.bytes, sizeof(status.bytes), 20);
-
-      if (!success)
-      {
-        retries++;
-        // Only log the first retry to avoid spamming the console
-        if (retries == 1)
-        {
-          Serial.print("SendReport failed, retrying (");
-          Serial.print(retries);
-          Serial.print("/");
-          Serial.print(MAX_RETRIES);
-          Serial.println(")");
-        }
-        // Small delay to allow USB stack to recover
-        delay(5);
-      }
-    }
-
-    // Log if all retries failed
-    if (!success && retries == MAX_RETRIES)
-    {
-      static uint32_t last_error_log = 0;
-      // Only log errors once per second to avoid spamming
-      if (millis() - last_error_log >= 1000)
-      {
-        last_error_log = millis();
-        Serial.println("SendReport failed after maximum retries");
-      }
-    }
+  if (hid.ready()) {
+    hid.SendReport(DEV_REPORT_ID, status.bytes, sizeof(status.bytes), 100);
   }
 }
 
@@ -260,6 +214,7 @@ void WheelController::_onOutput(uint8_t report_id, const uint8_t *buffer, uint16
         Serial.println("WHEEL_RANGE_CHANGE");
         Serial.print("Wheel range: ");
         Serial.println(wheel_range);
+        ffb_controller.wheel_range_normalized = (float)wheel_range / 900.0;
         fully_parsed = true;
       }
     }

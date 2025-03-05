@@ -2,10 +2,11 @@
 #include <Arduino.h>
 #include "MotorController.h"
 
-FfbController::FfbController(uint16_t axis_wheel_center, uint16_t axis_wheel_range, MotorController &motorControl)
+FfbController::FfbController(MotorController &motorControl)
   : force_current(0x80),
     ffb_forces_en{ 0, 0, 0, 0 },
-    motor(motorControl) {
+    motor(motorControl),
+    wheel_range_normalized(1.0) {
   // Constructor body is now empty since all initialization is done in the initializer list
 }
 
@@ -16,6 +17,9 @@ void FfbController::set_default_spring(uint8_t k1, uint8_t k2, uint8_t clip) {
 }
 
 void FfbController::printForces() {
+  if (ffb_forces_en[0] == 0 && ffb_forces_en[1] == 0 && ffb_forces_en[2] == 0 && ffb_forces_en[3] == 0) {
+    return;
+  }
   static uint32_t last_print = 0;
   if (millis() - last_print < 500) {
     return;
@@ -100,6 +104,63 @@ void FfbController::apply_forces(EnumForceType force_type, uint8_t force_mask, u
   ffb_forces[force_mask].constant.param3 = param3;
 }
 
+float FfbController::calculate_damper_force(uint8_t k1, uint8_t k2, uint8_t s1, uint8_t s2, uint8_t position) {
+  static uint8_t last_position = 0;
+  int8_t delta = position - last_position;
+  last_position = position;
+
+  if (delta < 0) {
+     // k2, s2
+     if (s2) {
+      return -k2 * delta;
+     }
+     else {
+      return k2 * delta;
+     }
+  }
+  else {
+     // k1, s1
+     if (s1) {
+      return -k1 * delta;
+     }
+     else {
+      return k1 * delta;
+     }
+  }
+}
+
+float FfbController::apply_force(uint8_t force_index, uint8_t position) {
+  // return a value between -127 and 127
+  uint8_t force_type = ffb_forces[force_index].constant.type;
+  uint8_t param0 = ffb_forces[force_index].constant.param0;
+  uint8_t param1 = ffb_forces[force_index].constant.param1;
+  uint8_t param2 = ffb_forces[force_index].constant.param2;
+  uint8_t param3 = ffb_forces[force_index].constant.param3;
+
+
+  switch ((EnumForceType)force_type) {
+    case EnumForceType::CONSTANT:
+      return param0 - 128;
+    case EnumForceType::SPRING:
+      // TODO: implement spring force
+      return 0;
+    case EnumForceType::DAMPER:
+    {
+      uint8_t k1 =  param0;
+      uint8_t s1 =  param1;
+      uint8_t k2 =  param2;
+      uint8_t s2 =  param3;
+      return calculate_damper_force(k1, k2, s1, s2, position);
+    }
+    case EnumForceType::AUTO_CNT_SPRING:
+      return param3;
+    break;
+    default:
+      return 0;
+  }
+  return 0;
+}
+
 float FfbController::coeff_from_table(uint8_t offset) {
 // K Value Spring Coeficient
 // 0x00 1/4 of offset
@@ -124,50 +185,45 @@ float FfbController::coeff_from_table(uint8_t offset) {
 }
 
 float FfbController::update(float axis_wheel_value) {
-force_current = 0;
+  force_current = 0;
+  // STartign with the spring
+  // map position to 0-255 as in the logitech protocol
 
-// STartign with the spring
-// map position to 0-255 as in the logitech protocol
-uint8_t position = map(axis_wheel_value*1000, -1000, 1000, 0, 255);
-
-if (ffb_default_spring_on) {
-  bool lower = position < dead_band_lower;
-  bool upper = position > dead_band_upper;
-  if (lower) {
-    float spring_coef = coeff_from_table(ffb_default_spring_k1);
-    float offset = position - dead_band_lower;
-    float spring_force = min(spring_coef * abs(position - dead_band_lower), ffb_default_spring_clip);
-    force_current -= spring_force;
+  // enforce range limits
+  if (axis_wheel_value > wheel_range_normalized) {
+    force_current += 1.0;
   }
-  else if (upper) {
-    float spring_coef = coeff_from_table(ffb_default_spring_k2);
-    float offset = position - dead_band_upper;
-    float spring_force = min(spring_coef * abs(position - dead_band_upper), ffb_default_spring_clip);
-    force_current += spring_force;
+  if (axis_wheel_value < -wheel_range_normalized) {
+    force_current -= 1.0;
   }
 
+  uint16_t position = map(axis_wheel_value*1000, -1000, 1000, 0, 255);
 
 
-  // bool lower = position < dead_band_lower;
-  // bool upper = position > dead_band_upper;
-  // if (lower) {
-  //   float spring_coef = coeff_from_table(ffb_default_spring_k1);
-  //   float offset = position - dead_band_lower;
-  //   float spring_force = min(spring_coef * abs(position - dead_band_lower), ffb_default_spring_clip);
-  //   force_current += spring_force;
-  // }
-  // else if (upper) {
-  //   float spring_coef = coeff_from_table(ffb_default_spring_k2);
-  //   float offset = position - dead_band_upper;
-  //   float spring_force = min(spring_coef * abs(position - dead_band_upper), ffb_default_spring_clip);
-  //   force_current += spring_force;
-  // }
-  Serial.print("wheel position: ");
-  Serial.print(position);
-  Serial.print(" spring force: ");
-  Serial.println(force_current);
-}
-return force_current;
+  if (ffb_default_spring_on) {
+    bool lower = position < dead_band_lower;
+    bool upper = position > dead_band_upper;
+    if (lower) {
+      float spring_coef = coeff_from_table(ffb_default_spring_k1);
+      float offset = position - dead_band_lower;
+      float spring_force = min(spring_coef * abs(position - dead_band_lower), ffb_default_spring_clip);
+      force_current -= spring_force;
+    }
+    else if (upper) {
+      float spring_coef = coeff_from_table(ffb_default_spring_k2);
+      float offset = position - dead_band_upper;
+      float spring_force = min(spring_coef * abs(position - dead_band_upper), ffb_default_spring_clip);
+      force_current += spring_force;
+    }
+
+
+    for (int i = 0; i < 4; i++) {
+      if (ffb_forces_en[i]) {
+        force_current += apply_force(i, position);
+      }
+    }
+  }
+  return force_current;
 }
 
 float FfbController::get_force() {

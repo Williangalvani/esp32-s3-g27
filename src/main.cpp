@@ -17,11 +17,11 @@ void TaskSendHidReports(void *parameter) {
 }
 
 void setup() {
+  whl.motor_controller.home();
   usb_setup();
   whl.init();
   // HID report update task on core 0 with priority 1 (was stalling when was 0), the rest runs on core 1
   xTaskCreatePinnedToCore(TaskSendHidReports, "TaskSendHidReports", 10000, NULL, 1, &TaskSendHidReportsHandle, 0);
-  whl.motor_controller.home();
   Serial.println("Setup complete - ready for force feedback");
 }
 
