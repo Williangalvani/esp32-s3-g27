@@ -32,10 +32,12 @@ void setup() {
   whl.init();
   
   // Send multiple state reports to establish proper endpoint ordering
-  // This helps Windows recognize the correct endpoint order
-  for (int i = 0; i < 3; i++) {
+  // This helps Windows recognize the correct endpoint order and descriptor
+  // Ensure we send reports at proper intervals (based on bInterval=2)
+  Serial.println("Sending initial state reports to establish proper endpoint usage...");
+  for (int i = 0; i < 5; i++) {
     whl.sendState();
-    delay(100);
+    delay(4); // Interval of 2 corresponds to 4ms (2 * 2ms)
   }
   
   // Home the motor controller after USB and wheel init
@@ -50,18 +52,10 @@ void setup() {
     NULL,               // Parameters
     2,                  // Priority (higher priority for consistent timing) 
     &TaskSendHidReportsHandle, 
-    0                   // Run on Core 0 (USB core)
+    0                   // Pin to core 0 (keep core 1 for other tasks)
   );
   
-  #ifdef DEBUG_MODE
-  Serial.println("Setup complete - ready for force feedback (DEBUG MODE)");
-  Serial.println("Using custom USB descriptor with IN endpoint first for Windows compatibility");
-  #else
-  Serial.println("Setup complete - ready for force feedback (PRODUCTION MODE)");
-  Serial.println("Using custom USB descriptor with IN endpoint first for Windows compatibility");
-  Serial.println("Serial debugging reduced for optimal performance");
-  Serial.flush();
-  #endif
+  Serial.println("Setup complete, running main loop");
 }
 
 void loop() {

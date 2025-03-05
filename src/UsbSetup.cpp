@@ -19,19 +19,27 @@ extern "C" uint16_t tusb_hid_load_descriptor(uint8_t * dst, uint8_t * itf) {
   // String descriptor index
   uint8_t str_index = 0; // Default string index
   
+  // Define HID report descriptor length (based on reference design)
+  uint16_t hid_report_desc_len = 133; // Length from reference design
+  
   // Create descriptor with IN endpoint BEFORE OUT endpoint for Windows compatibility
+  // Updated to match reference G27 descriptor
   uint8_t descriptor[32] = {
     // Interface descriptor
     9, 0x04, *itf, 0, 2, 0x03, 0, 0, str_index,
     
-    // HID descriptor
-    9, 0x21, 0x11, 0x01, 0, 1, 0x22, sizeof(hid_report_descriptor), 0,
+    // HID descriptor - updated to match reference
+    9, 0x21, 0x11, 0x01, // bcdHID: 0x0111
+    0x21,                // bCountryCode: US (0x21)
+    1,                   // bNumDescriptors: 1
+    0x22,                // bDescriptorType: HID Report (0x22)
+    (uint8_t)(hid_report_desc_len & 0xFF), (uint8_t)((hid_report_desc_len >> 8) & 0xFF), // wDescriptorLength: 133
     
     // CRITICAL: Endpoint IN descriptor (DEVICE TO HOST) MUST COME FIRST for Windows
-    7, 0x05, (uint8_t)(0x80 | ep_in), 0x03, 64, 0, 1,
+    7, 0x05, (uint8_t)(0x80 | ep_in), 0x03, 16, 0, 2,  // Updated wMaxPacketSize to 16 and bInterval to 2
     
     // Endpoint OUT descriptor (HOST TO DEVICE) comes second
-    7, 0x05, ep_out, 0x03, 64, 0, 1
+    7, 0x05, ep_out, 0x03, 16, 0, 2  // Updated wMaxPacketSize to 16 and bInterval to 2
   };
   
   // Copy our custom descriptor to the destination buffer
@@ -55,7 +63,7 @@ void usb_setup() {
   // Note: CDC mode is disabled through build flag ARDUINO_USB_CDC_ON_BOOT=0
   // which we've confirmed is set in platformio.ini
   
-  // Initialize USB with correct VID/PID
+  // Initialize USB with correct VID/PID for G27
   USB.VID(DEV_VID);
   USB.PID(DEV_PID);
   USB.manufacturerName(DEV_MANUFACTURER_NAME);
@@ -69,8 +77,10 @@ void usb_setup() {
   
   // CRITICAL: Our custom descriptor implementation ensures:
   // 1. IN endpoint (0x81) is defined BEFORE OUT endpoint (0x01)
-  // 2. This matches the descriptor order seen in the working device
-  // 3. Windows requires this specific order to work correctly
+  // 2. Country code is set to US (0x21) as in reference
+  // 3. Both endpoints use proper wMaxPacketSize (16) and bInterval (2)
+  // 4. This matches the descriptor order seen in the working reference device
+  // 5. Windows requires this specific order to work correctly
   
   if (!USB.begin()) {
     Serial.println("USB initialization failed!");
@@ -83,6 +93,7 @@ void usb_setup() {
   Serial.println("USB initialized successfully with custom descriptor");
   delay(1000); // Give USB time to stabilize
   
-  Serial.println("USB Mode: HID only (CDC disabled via ARDUINO_USB_CDC_ON_BOOT=0)");
+  Serial.println("USB Mode: HID only (CDC explicitly disabled)");
   Serial.println("Endpoint order: IN (0x81) first, OUT (0x01) second (Windows compatible)");
+  Serial.println("HID descriptor: bcdHID=0x0111, bCountryCode=0x21 (US), wMaxPacketSize=16, bInterval=2");
 } 
