@@ -1,0 +1,1 @@
+set(COMPONENT_REQUIRES usb tinyusb) 
