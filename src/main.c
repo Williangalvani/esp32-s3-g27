@@ -34,8 +34,8 @@ static const char *TAG = "g27_wheel";
 #define DEV_PRODUCT_NAME "G27 Racing Wheel"
 #define DEV_MANUFACTURER_NAME "Logitech, Inc."
 #define DEV_REPORT_ID (0)
-#define DEV_REPORT_SIZE (11)
-#define DEV_FFB_REQUEST_SIZE (7)
+#define DEV_REPORT_SIZE (11)    // Size of our HID report (wheel_report structure size)
+#define DEV_FFB_REQUEST_SIZE (7) // Size of force feedback request from host
 
 // G27 Wheel report structure
 typedef struct __attribute__((packed)) {
@@ -121,20 +121,28 @@ static const uint8_t hid_report_descriptor[] = {
 };
 
 // USB descriptor configuration
-#define EPNUM_HID   0x81
+#define EPNUM_HID_IN    0x81  // Endpoint for HID IN (device to host)
+#define EPNUM_HID_OUT   0x01  // Endpoint for HID OUT (host to device)
 
 enum {
     ITF_NUM_HID,
     ITF_NUM_TOTAL
 };
 
-// Configuration descriptor
+// Configuration descriptor - modified to match captured USB traffic
 static const uint8_t desc_configuration[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
-    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN, 0, 500),
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN, 0x80, 98), // Self-powered (0x80) with max power of 98mA
 
-    // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
-    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_descriptor), EPNUM_HID, DEV_REPORT_SIZE, 1)
+    // Custom HID Interface descriptor with proper bcdHID value
+    // Interface descriptor
+    9, TUSB_DESC_INTERFACE, ITF_NUM_HID, 0, 2, TUSB_CLASS_HID, 0, HID_ITF_PROTOCOL_NONE, 0,
+    // HID descriptor with bcdHID = 0x0111 (version 1.11)
+    9, HID_DESC_TYPE_HID, 0x11, 0x01, 0, 1, HID_DESC_TYPE_REPORT, U16_TO_U8S_LE(sizeof(hid_report_descriptor)),
+    // Endpoint In
+    7, TUSB_DESC_ENDPOINT, EPNUM_HID_IN, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(16), 2,
+    // Endpoint Out
+    7, TUSB_DESC_ENDPOINT, EPNUM_HID_OUT, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(16), 2
 };
 
 // String descriptors
@@ -149,14 +157,14 @@ static const char *string_desc_arr[] = {
 static const tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
     .bDescriptorType = TUSB_DESC_DEVICE,
-    .bcdUSB = 0x0200,
-    .bDeviceClass = 0x00,
+    .bcdUSB = 0x0130,         // USB 1.3.0
+    .bDeviceClass = 0x00,     // Class defined at interface level
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
-    .idVendor = DEV_VID,         // Logitech VID
-    .idProduct = DEV_PID,        // G27 PID
-    .bcdDevice = 0x0100,
+    .idVendor = DEV_VID,      // Logitech VID
+    .idProduct = DEV_PID,     // G27 PID
+    .bcdDevice = 0x0100,      // Device release v1.0
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 3,
@@ -168,9 +176,10 @@ void g27_wheel_task(void *pvParameters)
 {
     const float period_ms = 5000.0f;  // Full rotation period in milliseconds (5 seconds)
     
+    // Initialize the report structure
+    memset(&wheel_report, 0, sizeof(wheel_report));
+    
     while (1) {
-        memset(&wheel_report, 0, sizeof(wheel_report));
-        
         // Calculate angle based on time
         int64_t time_us = esp_timer_get_time();
         float time_ms = time_us / 1000.0f;
@@ -186,11 +195,12 @@ void g27_wheel_task(void *pvParameters)
         wheel_report.axis_brake = 0x7F + (int8_t)(sinf(angle + M_PI/3) * 0x7E);
         wheel_report.axis_clutch = 0x7F + (int8_t)(sinf(angle + 2*M_PI/3) * 0x7E);
         
+        // Send the report if USB is ready
         if (tud_hid_ready()) {
             tud_hid_report(DEV_REPORT_ID, &wheel_report, sizeof(wheel_report));
         }
         
-        // Run at 10ms intervals to prevent watchdog from triggering
+        // Run at 10ms intervals (100Hz report rate)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -200,7 +210,8 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
                               hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
 {
     // If we get a GET_REPORT request, send the current wheel state
-    if (report_id == 0 && report_type == HID_REPORT_TYPE_INPUT) {
+    if (report_type == HID_REPORT_TYPE_INPUT) {
+        ESP_LOGI(TAG, "GET_REPORT request received for report ID %d, type %d", report_id, report_type);
         memcpy(buffer, &wheel_report, sizeof(wheel_report));
         return sizeof(wheel_report);
     }
@@ -212,9 +223,19 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                           hid_report_type_t report_type, const uint8_t *buffer, uint16_t bufsize)
 {
     // This would handle force feedback data from the host
-    // For now, we just log it
-    if (report_type == HID_REPORT_TYPE_OUTPUT && bufsize >= DEV_FFB_REQUEST_SIZE) {
-        ESP_LOGI(TAG, "Force Feedback data received, %d bytes", bufsize);
+    if (report_type == HID_REPORT_TYPE_OUTPUT) {
+        ESP_LOGI(TAG, "Force Feedback data received, %d bytes: [%02X %02X %02X %02X %02X %02X %02X]", 
+               bufsize,
+               bufsize > 0 ? buffer[0] : 0,
+               bufsize > 1 ? buffer[1] : 0,
+               bufsize > 2 ? buffer[2] : 0,
+               bufsize > 3 ? buffer[3] : 0,
+               bufsize > 4 ? buffer[4] : 0,
+               bufsize > 5 ? buffer[5] : 0,
+               bufsize > 6 ? buffer[6] : 0);
+        
+        // Here you would process the force feedback commands
+        // For example, if you have a motor control system or haptic feedback
     }
 }
 
@@ -242,3 +263,4 @@ void app_main(void)
     // Create task for wheel updates
     xTaskCreate(g27_wheel_task, "g27_task", 4096, NULL, 5, NULL);
 }
+
