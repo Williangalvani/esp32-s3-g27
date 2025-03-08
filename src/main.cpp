@@ -211,8 +211,7 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
            bufsize > 5 ? buffer[5] : 0,
            bufsize > 6 ? buffer[6] : 0);
     
-    // Process different FFB commands - currently just logging
-    // Later we'll connect these to the wheel_controller for actual force feedback
+    // Process different FFB commands
     switch (cmd) {
         case FFB_CMD_AUTOCENTER:
             if (bufsize >= 3) {
@@ -220,7 +219,19 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
                 uint8_t strength = buffer[2];
                 ESP_LOGI(TAG, "FFB: Autocenter %s, strength %d", 
                          enable ? "ON" : "OFF", strength);
-                // TODO: Implement autocenter effect
+                
+                // Enable/disable the motor
+                wheel_controller.enable_motor(enable);
+                
+                if (enable) {
+                    // Set PID parameters for auto-centering
+                    // Higher P gain for stronger centering effect
+                    float p_gain = strength / 255.0f * 0.5f;
+                    wheel_controller.set_pid_params(p_gain, 0.01f, 0.05f);
+                    
+                    // Set target to center position
+                    wheel_controller.set_target_position(0);
+                }
             }
             break;
             
@@ -229,16 +240,64 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
                 int8_t force = (int8_t)buffer[1]; // Force direction and magnitude
                 uint8_t duration = buffer[2];     // Duration in 10ms units
                 ESP_LOGI(TAG, "FFB: Constant force %d, duration %d0ms", force, duration);
-                // TODO: Implement constant force effect
+                
+                // Apply direct force to the wheel
+                wheel_controller.enable_motor(true);
+                wheel_controller.set_force(force);
+                
+                // Note: For proper duration handling, we would need a timer-based system
+                // to stop the force after the specified duration
             }
             break;
             
         case FFB_CMD_SPRING:
+            if (bufsize >= 3) {
+                uint8_t strength = buffer[1];
+                ESP_LOGI(TAG, "FFB: Spring effect, strength %d", strength);
+                
+                // Enable spring effect (position-based centering)
+                wheel_controller.enable_motor(true);
+                
+                // Set PID parameters for spring effect - higher P gain = stronger spring
+                float p_gain = strength / 255.0f * 0.5f;
+                wheel_controller.set_pid_params(p_gain, 0.0f, 0.05f);
+                
+                // Set target to center position
+                wheel_controller.set_target_position(0);
+            }
+            break;
+            
         case FFB_CMD_DAMPER:
+            if (bufsize >= 3) {
+                uint8_t strength = buffer[1];
+                ESP_LOGI(TAG, "FFB: Damper effect, strength %d", strength);
+                
+                // Enable damper effect (velocity-based resistance)
+                wheel_controller.enable_motor(true);
+                
+                // Set PID parameters for damper effect - higher D gain = stronger damping
+                float d_gain = strength / 255.0f * 0.5f;
+                wheel_controller.set_pid_params(0.05f, 0.0f, d_gain);
+            }
+            break;
+            
         case FFB_CMD_FRICTION:
+            if (bufsize >= 3) {
+                uint8_t strength = buffer[1];
+                ESP_LOGI(TAG, "FFB: Friction effect, strength %d", strength);
+                
+                // Apply friction - a combination of damping and constant resistance
+                wheel_controller.enable_motor(true);
+                
+                // Set PID parameters - use a mix of P and D terms for friction
+                float gain = strength / 255.0f * 0.3f;
+                wheel_controller.set_pid_params(gain, 0.0f, gain);
+            }
+            break;
+            
         case FFB_CMD_PERIODIC:
-            ESP_LOGI(TAG, "FFB: Command 0x%02X not yet implemented", cmd);
-            // TODO: Implement other effects
+            // Periodic effects are more complex and would need a separate handler
+            ESP_LOGI(TAG, "FFB: Periodic effect not yet implemented");
             break;
             
         default:
@@ -247,29 +306,29 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
     }
 }
 
-// Task to generate wheel values based on time
+// Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
 {
-    const float period_ms = 5000.0f;  // Full rotation period in milliseconds (5 seconds)
-    
     // Initialize the report structure
     memset(&wheel_report, 0, sizeof(wheel_report));
     
     while (1) {
-        // In a real implementation, get the actual wheel position from the encoder
-        // For now, we're still using a simulated position for testing
+        // Get the actual wheel position from the encoder
+        float position = wheel_controller.get_position_zero_centered();
         
-        // Calculate angle based on time
-        int64_t time_us = esp_timer_get_time();
-        float time_ms = time_us / 1000.0f;
-        float angle = (2.0f * M_PI * fmodf(time_ms, period_ms)) / period_ms;
-        
-        // Calculate wheel position (14 bits: 6 in LSB, 8 in MSB)
-        uint16_t wheel_pos = 0x1FFF + (int16_t)(sinf(angle) * 0x1FFE);
+        // Calculate wheel position for report (14 bits: 6 in LSB, 8 in MSB)
+        // Scale position from -1.0...1.0 to full wheel range
+        uint16_t wheel_pos = 0x1FFF + (int16_t)(position * 0x1FFE);
         wheel_report.axis_wheel_msb = (wheel_pos >> 6) & 0xFF;
         wheel_report.axis_wheel_lsb6_and_btns2 = wheel_pos & 0x3F;
         
-        // Other axes: center at 0x7F, amplitude of 0x60
+        // Read pedal values from analog inputs or other source
+        // For now, just using simulated values
+        int64_t time_us = esp_timer_get_time();
+        float time_ms = time_us / 1000.0f;
+        float period_ms = 5000.0f;
+        float angle = (2.0f * M_PI * fmodf(time_ms, period_ms)) / period_ms;
+        
         wheel_report.axis_throttle = 0x7F + (int8_t)(sinf(angle) * 0x7E);
         wheel_report.axis_brake = 0x7F + (int8_t)(sinf(angle + M_PI/3) * 0x7E);
         wheel_report.axis_clutch = 0x7F + (int8_t)(sinf(angle + 2*M_PI/3) * 0x7E);
@@ -338,6 +397,12 @@ extern "C" void cpp_app_main(void)
     
     // Initialize the wheel controller
     wheel_controller.init();
+    
+    // Perform homing procedure to calibrate wheel range
+    ESP_LOGI(TAG, "Starting wheel homing procedure");
+    wheel_controller.home();
+    
+    // Start position monitoring
     wheel_controller.start_monitoring();
     
     // Initialize TinyUSB
