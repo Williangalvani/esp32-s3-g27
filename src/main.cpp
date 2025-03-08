@@ -9,6 +9,7 @@
 #include <math.h>
 #include "esp_timer.h"
 #include <stdint.h>
+#include <stdlib.h>  // For atoi function
 #include "wheel_controller.h"  // Include the wheel controller header
 #include "ffbTypes.h"
 #include "ffbController.h"
@@ -229,6 +230,34 @@ void g27_wheel_task(void *pvParameters)
         wheel_report.axis_throttle = 0x7F + (int8_t)(sinf(angle) * 0x7E);
         wheel_report.axis_brake = 0x7F + (int8_t)(sinf(angle + M_PI/3) * 0x7E);
         wheel_report.axis_clutch = 0x7F + (int8_t)(sinf(angle + 2*M_PI/3) * 0x7E);
+        
+        // Read button states from our button controller
+        uint16_t button_state = button_controller.get_all_buttons();
+        
+        // Map button states to the report structure
+        // First 8 buttons go into buttons_0
+        wheel_report.buttons_0 = button_state & 0xFF;
+        
+        // If we have more than 8 buttons, map the rest to buttons_1
+        if (NUM_BUTTONS > 8) {
+            wheel_report.buttons_1 = (button_state >> 8) & 0xFF;
+        }
+        
+        // If we have button states for buttons_2, update it (not implemented yet)
+        // wheel_report.buttons_2 = 0;
+        
+        // The last 2 bits of axis_wheel_lsb6_and_btns2 can hold 2 more buttons
+        // Preserve the lower 6 bits (wheel position) and update the top 2 bits
+        wheel_report.axis_wheel_lsb6_and_btns2 &= 0x3F; // Clear top 2 bits
+        // Top 2 bits could be set from buttons if needed
+        // For example: wheel_report.axis_wheel_lsb6_and_btns2 |= ((button_state >> 16) & 0x03) << 6;
+        
+        // Log button state periodically (every ~1 second)
+        static int log_counter = 0;
+        if (++log_counter >= 100) {
+            ESP_LOGI(TAG, "Button state: 0x%04x", button_state);
+            log_counter = 0;
+        }
         
         // Send the report if USB is ready
         if (tud_hid_ready()) {

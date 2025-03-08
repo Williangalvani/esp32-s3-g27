@@ -193,4 +193,29 @@ void ButtonController::stop_button_task() {
 
 void ButtonController::register_callback(button_callback_t callback) {
     button_callback = callback;
+}
+
+// Simulate button presses for testing (can be controlled by serial input or other means)
+void ButtonController::simulate_button_press(uint8_t button_num, bool pressed) {
+    if (button_num >= NUM_BUTTONS) {
+        ESP_LOGW(TAG, "Invalid button number for simulation: %d", button_num);
+        return;
+    }
+    
+    // Save the previous state
+    last_button_state = button_state;
+    
+    // Update the button state
+    if (pressed) {
+        button_state |= (1 << button_num);
+    } else {
+        button_state &= ~(1 << button_num);
+    }
+    
+    // Trigger the callback if registered and button state changed
+    if (button_callback != nullptr && ((button_state ^ last_button_state) & (1 << button_num))) {
+        button_callback(button_num, pressed);
+    }
+    
+    ESP_LOGI(TAG, "Simulated button %d %s", button_num, pressed ? "pressed" : "released");
 } 

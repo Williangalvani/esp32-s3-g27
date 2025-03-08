@@ -40,6 +40,9 @@ public:
     bool button_released(uint8_t button_num); // Returns true on button release (falling edge)
     void start_button_task();
     void stop_button_task();
+    
+    // Simulate button presses for testing
+    void simulate_button_press(uint8_t button_num, bool pressed);
 
     // Callback registration for button events
     typedef void (*button_callback_t)(uint8_t button_num, bool pressed);
