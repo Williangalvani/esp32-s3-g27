@@ -1,13 +1,17 @@
 #include "wheel_controller.h"
-#include <algorithm> // For min and max functions
+#include "ffbController.h"
+#include <cmath>
+#include <algorithm>
+#include "esp_log.h"
 
 static const char *TAG = "wheel_ctrl";
 
 // Constructor
-WheelController::WheelController() : 
-    pcnt_unit(nullptr), 
+WheelController::WheelController(FfbController* ffb)
+    : pcnt_unit(nullptr), 
     current_position(WHEEL_CENTER_POS), 
     target_position(WHEEL_CENTER_POS),
+    ffb_controller(ffb),
     motor_enabled(false),
     motor_power(0),
     left_most(0),
@@ -23,7 +27,8 @@ WheelController::WheelController() :
     integral_error(0),
     previous_error(0),
     deadzone(100),
-    max_integral(1000)
+    max_integral(1000),
+    initialized(false)
 {
 }
 
@@ -197,6 +202,10 @@ void WheelController::stop() {
 
 // Move with proportional force (-1.0 to 1.0)
 void WheelController::move(float force) {
+    if (!initialized) {
+        ESP_LOGW(TAG, "Wheel controller not initialized");
+        return;
+    }
     // Constrain force to be between -1 and 1
     if (force > 1.0f) force = 1.0f;
     if (force < -1.0f) force = -1.0f;
@@ -457,7 +466,7 @@ void WheelController::homing_task_func(void* pvParameters) {
     
     // Restart the monitoring task if needed
     self->start_monitoring();
-    
+    self->initialized = true;
     // Delete this task when complete
     vTaskDelete(NULL);
 }
@@ -496,10 +505,14 @@ void WheelController::monitor_task_func(void* pvParameters) {
         int16_t position = self->get_position();
         
         // Apply force if motor is enabled and we have a target position
-        if (self->is_motor_enabled()) {
-            int8_t force = self->calculate_pid_force();
-            self->set_motor_power(force);
+        int8_t force = 0;
+        if (self->ffb_controller != nullptr) {
+            // Get position as normalized value (-1.0 to 1.0)
+            float wheel_pos = self->get_position_zero_centered_normalized();
+            // Update FFB forces and get the resulting force
+            force = self->ffb_controller->update(wheel_pos);
         }
+        self->move(-force);
         
         // Log position occasionally (every ~1 second)
         static int count = 0;

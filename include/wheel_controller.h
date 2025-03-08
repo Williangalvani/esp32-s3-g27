@@ -8,6 +8,9 @@
 #include "driver/pulse_cnt.h"
 #include "driver/ledc.h"
 
+// Forward declaration
+class FfbController;
+
 // Motor pins
 #define MOT_A 11
 #define MOT_B 12
@@ -31,9 +34,13 @@
 class WheelController {
 private:
     // Encoder related members
+    bool initialized;
     pcnt_unit_handle_t pcnt_unit;
     int16_t current_position;
     int16_t target_position;
+    
+    // FFB Controller reference
+    FfbController* ffb_controller;
     
     // Motor control related members
     bool motor_enabled;
@@ -70,8 +77,12 @@ private:
     static void homing_task_func(void* pvParameters);
     
 public:
-    WheelController();
+    // Updated constructor with FfbController reference
+    WheelController(FfbController* ffb = nullptr);
     ~WheelController();
+    
+    // Set the FFB controller reference
+    void set_ffb_controller(FfbController* ffb) { ffb_controller = ffb; }
     
     // Initialize the hardware
     void init();

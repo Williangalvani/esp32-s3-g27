@@ -8,8 +8,11 @@
 #include <stdio.h>
 #include <math.h>
 #include "esp_timer.h"
+#include <stdint.h>
 #include "wheel_controller.h"  // Include the wheel controller header
+#include "ffbTypes.h"
 #include "ffbController.h"
+#include "nvs_flash.h"
 // Define M_PI if it's not already defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -186,9 +189,11 @@ static const tusb_desc_device_t desc_device = {
     .bNumConfigurations = 1
 };
 
-// Global instance of the wheel controller
-WheelController wheel_controller;
+// First create the FFB controller
 FfbController ffb_controller;
+
+// Then create the wheel controller with a reference to the FFB controller
+WheelController wheel_controller(&ffb_controller);
 
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
@@ -286,8 +291,6 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
     case EnumFfbCmd::EXTENDED_COMMAND:
       ESP_LOGI(TAG, "EXTENDED_COMMAND: %d", param0);
       break;
-    default:
-      return;
   }
 }
 
