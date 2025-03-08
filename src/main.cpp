@@ -9,7 +9,7 @@
 #include <math.h>
 #include "esp_timer.h"
 #include "wheel_controller.h"  // Include the wheel controller header
-
+#include "ffbController.h"
 // Define M_PI if it's not already defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -188,123 +188,7 @@ static const tusb_desc_device_t desc_device = {
 
 // Global instance of the wheel controller
 WheelController wheel_controller;
-
-// Callback function for force feedback commands
-void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
-{
-    // Make sure we have at least one byte for the command
-    if (bufsize < 1) {
-        ESP_LOGW(TAG, "FFB command too short: %d bytes", bufsize);
-        return;
-    }
-    
-    uint8_t cmd = buffer[0];
-    
-    // Log the FFB command in a readable format
-    ESP_LOGI(TAG, "FFB Command 0x%02X received, %d bytes: [%02X %02X %02X %02X %02X %02X %02X]", 
-           cmd, bufsize,
-           bufsize > 0 ? buffer[0] : 0,
-           bufsize > 1 ? buffer[1] : 0,
-           bufsize > 2 ? buffer[2] : 0,
-           bufsize > 3 ? buffer[3] : 0,
-           bufsize > 4 ? buffer[4] : 0,
-           bufsize > 5 ? buffer[5] : 0,
-           bufsize > 6 ? buffer[6] : 0);
-    
-    // Process different FFB commands
-    switch (cmd) {
-        case FFB_CMD_AUTOCENTER:
-            if (bufsize >= 3) {
-                uint8_t enable = buffer[1];
-                uint8_t strength = buffer[2];
-                ESP_LOGI(TAG, "FFB: Autocenter %s, strength %d", 
-                         enable ? "ON" : "OFF", strength);
-                
-                // Enable/disable the motor
-                wheel_controller.enable_motor(enable);
-                
-                if (enable) {
-                    // Set PID parameters for auto-centering
-                    // Higher P gain for stronger centering effect
-                    float p_gain = strength / 255.0f * 0.5f;
-                    wheel_controller.set_pid_params(p_gain, 0.01f, 0.05f);
-                    
-                    // Set target to center position
-                    wheel_controller.set_target_position(0);
-                }
-            }
-            break;
-            
-        case FFB_CMD_CONSTANT:
-            if (bufsize >= 3) {
-                int8_t force = (int8_t)buffer[1]; // Force direction and magnitude
-                uint8_t duration = buffer[2];     // Duration in 10ms units
-                ESP_LOGI(TAG, "FFB: Constant force %d, duration %d0ms", force, duration);
-                
-                // Apply direct force to the wheel
-                wheel_controller.enable_motor(true);
-                wheel_controller.set_force(force);
-                
-                // Note: For proper duration handling, we would need a timer-based system
-                // to stop the force after the specified duration
-            }
-            break;
-            
-        case FFB_CMD_SPRING:
-            if (bufsize >= 3) {
-                uint8_t strength = buffer[1];
-                ESP_LOGI(TAG, "FFB: Spring effect, strength %d", strength);
-                
-                // Enable spring effect (position-based centering)
-                wheel_controller.enable_motor(true);
-                
-                // Set PID parameters for spring effect - higher P gain = stronger spring
-                float p_gain = strength / 255.0f * 0.5f;
-                wheel_controller.set_pid_params(p_gain, 0.0f, 0.05f);
-                
-                // Set target to center position
-                wheel_controller.set_target_position(0);
-            }
-            break;
-            
-        case FFB_CMD_DAMPER:
-            if (bufsize >= 3) {
-                uint8_t strength = buffer[1];
-                ESP_LOGI(TAG, "FFB: Damper effect, strength %d", strength);
-                
-                // Enable damper effect (velocity-based resistance)
-                wheel_controller.enable_motor(true);
-                
-                // Set PID parameters for damper effect - higher D gain = stronger damping
-                float d_gain = strength / 255.0f * 0.5f;
-                wheel_controller.set_pid_params(0.05f, 0.0f, d_gain);
-            }
-            break;
-            
-        case FFB_CMD_FRICTION:
-            if (bufsize >= 3) {
-                uint8_t strength = buffer[1];
-                ESP_LOGI(TAG, "FFB: Friction effect, strength %d", strength);
-                
-                // Apply friction - a combination of damping and constant resistance
-                wheel_controller.enable_motor(true);
-                
-                // Set PID parameters - use a mix of P and D terms for friction
-                float gain = strength / 255.0f * 0.3f;
-                wheel_controller.set_pid_params(gain, 0.0f, gain);
-            }
-            break;
-            
-        case FFB_CMD_PERIODIC:
-            // Periodic effects are more complex and would need a separate handler
-            ESP_LOGI(TAG, "FFB: Periodic effect not yet implemented");
-            break;
-            
-        default:
-            ESP_LOGW(TAG, "FFB: Unknown command 0x%02X", cmd);
-            break;
-    }
-}
+FfbController ffb_controller;
 
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
@@ -357,23 +241,61 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
     return 0;
 }
 
+void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
+    uint8_t cmd = buffer[0];
+    uint8_t param0 = buffer[1];
+    uint8_t param1 = buffer[2];
+    uint8_t param2 = buffer[3];
+    uint8_t param3 = buffer[4];
+    cmd = cmd & 0x0F;
+
+  switch ((EnumFfbCmd)cmd) {
+    case EnumFfbCmd::SET_DEFAULT_SPRING:
+      ESP_LOGI(TAG, "SET_DEFAULT_SPRING: %d %d %d", param0, param1, param2);
+      ffb_controller.set_default_spring(param0, param1, param2);
+      break;
+    case EnumFfbCmd::DEFAULT_SPRING_ON:
+      ESP_LOGI(TAG, "DEFAULT_SPRING_ON");
+      ffb_controller.set_default_spring_enabled(true);
+      break;
+    case EnumFfbCmd::DEFAULT_SPRING_OFF:
+      ESP_LOGI(TAG, "DEFAULT_SPRING_OFF");
+      ffb_controller.set_default_spring_enabled(false);
+      break;
+    case EnumFfbCmd::DOWNLOAD_FORCE:
+      ESP_LOGI(TAG, "DOWNLOAD_FORCE: %d", param0);
+      break;
+    case EnumFfbCmd::DOWNLOAD_AND_PLAY_FORCE:
+      ESP_LOGI(TAG, "DOWNLOAD_AND_PLAY_FORCE: %d", param0);
+      break;
+    case EnumFfbCmd::PLAY_FORCE:
+      ESP_LOGI(TAG, "PLAY_FORCE: %d", param0);
+      break;
+    case EnumFfbCmd::STOP_FORCE:
+      ESP_LOGI(TAG, "STOP_FORCE: %d", param0);
+      break;
+    case EnumFfbCmd::REFRESH_FORCE:
+      ESP_LOGI(TAG, "REFRESH_FORCE: %d", param0);
+      break;
+    case EnumFfbCmd::FIXED_TIME_LOOP:
+      ESP_LOGI(TAG, "FIXED_TIME_LOOP: %d", param0);
+      break;
+    case EnumFfbCmd::SET_DEAD_BAND:
+      ESP_LOGI(TAG, "SET_DEAD_BAND: %d", param0);
+      break;
+    case EnumFfbCmd::EXTENDED_COMMAND:
+      ESP_LOGI(TAG, "EXTENDED_COMMAND: %d", param0);
+      break;
+    default:
+      return;
+  }
+}
+
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                           hid_report_type_t report_type, const uint8_t *buffer, uint16_t bufsize)
 {
     // This handles force feedback data from the host
     if (report_type == 0) {
-        // Process Force Feedback commands
-        ESP_LOGI(TAG, "Force Feedback data received, %d bytes: [%02X %02X %02X %02X %02X %02X %02X]", 
-               bufsize,
-               bufsize > 0 ? buffer[0] : 0,
-               bufsize > 1 ? buffer[1] : 0,
-               bufsize > 2 ? buffer[2] : 0,
-               bufsize > 3 ? buffer[3] : 0,
-               bufsize > 4 ? buffer[4] : 0,
-               bufsize > 5 ? buffer[5] : 0,
-               bufsize > 6 ? buffer[6] : 0);
-        
-        // Process the force feedback commands
         process_ffb_command(buffer, bufsize);
     } else if (report_type == HID_REPORT_TYPE_FEATURE) {
         ESP_LOGI(TAG, "HID Feature report received, ID %d, %d bytes", report_id, bufsize);
