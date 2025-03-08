@@ -11,6 +11,7 @@ const char* LedController::TAG = "LED_CTRL";
 
 // Task periods
 #define LED_UPDATE_PERIOD_MS 100     // Update LEDs every 100ms for smoother animation
+#define SHIFT_CLOCK_TIMEOUT_MS 100   // Timeout for acquiring shift clock semaphore
 
 /*
  * LedController Implementation
@@ -20,7 +21,8 @@ LedController::LedController() :
     initialized(false), 
     led_task_handle(nullptr),
     pattern_counter(0),
-    blink_mode(true) {
+    blink_mode(true),
+    current_mode(LED_MODE_SINGLE_SCAN) {
     memset(led_state, 0, sizeof(led_state));
 }
 
@@ -39,25 +41,25 @@ void LedController::init() {
 }
 
 void LedController::init_gpio() {
-    // Configure LED shift register pins as outputs
-    gpio_config_t io_conf = {};
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = (1ULL << LED_SHIFT_CLOCK_PIN) | 
-                           (1ULL << LED_LATCH_CLOCK_PIN) | 
-                           (1ULL << LED_DATA_PIN);
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    gpio_config(&io_conf);
+    // Configure LED pins individually to avoid disturbing other configurations
+    
+    // Configure LED_LATCH_CLOCK_PIN as output
+    gpio_set_direction(LED_LATCH_CLOCK_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(LED_LATCH_CLOCK_PIN, GPIO_FLOATING);
+    
+    // Configure LED_DATA_PIN as output
+    gpio_set_direction(LED_DATA_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(LED_DATA_PIN, GPIO_FLOATING);
     
     // Set initial pin states
-    gpio_set_level(LED_SHIFT_CLOCK_PIN, 0);
     gpio_set_level(LED_LATCH_CLOCK_PIN, 0);
     gpio_set_level(LED_DATA_PIN, 0);
+    
+    ESP_LOGI(TAG, "LED GPIO pins initialized individually");
 }
 
 void LedController::set_led(uint8_t led_num, bool state) {
-    if (led_num >= 16) {
+    if (led_num >= NUM_LEDS) {
         ESP_LOGW(TAG, "Invalid LED number: %d", led_num);
         return;
     }
@@ -82,6 +84,12 @@ void LedController::clear_all_leds() {
 }
 
 void LedController::update_leds() {
+    // Acquire the shared shift clock with timeout
+    if (!take_shift_clock(SHIFT_CLOCK_TIMEOUT_MS)) {
+        ESP_LOGW(TAG, "Failed to acquire shift clock semaphore, skipping LED update");
+        return;
+    }
+    
     // Pull latch low to begin data transfer
     gpio_set_level(LED_LATCH_CLOCK_PIN, 0);
     
@@ -91,10 +99,10 @@ void LedController::update_leds() {
             // Set data bit
             gpio_set_level(LED_DATA_PIN, (led_state[i] >> bit) & 0x01);
             
-            // Pulse the shift clock
-            gpio_set_level(LED_SHIFT_CLOCK_PIN, 1);
+            // Pulse the shared shift clock
+            gpio_set_level(SHARED_SHIFT_CLOCK_PIN, 1);
             esp_rom_delay_us(1);  // Short delay
-            gpio_set_level(LED_SHIFT_CLOCK_PIN, 0);
+            gpio_set_level(SHARED_SHIFT_CLOCK_PIN, 0);
             esp_rom_delay_us(1);  // Short delay
         }
     }
@@ -103,6 +111,89 @@ void LedController::update_leds() {
     gpio_set_level(LED_LATCH_CLOCK_PIN, 1);
     esp_rom_delay_us(1);  // Short delay
     gpio_set_level(LED_LATCH_CLOCK_PIN, 0);
+    
+    // Release the shared shift clock
+    release_shift_clock();
+}
+
+// Single LED scanning back and forth
+void LedController::update_single_scan_pattern() {
+    static int led_position = 0;
+    static bool direction = true; // true = forward, false = backward
+    
+    // Clear all LEDs first
+    clear_all_leds();
+    
+    // Turn on only the current LED
+    set_led(led_position, true);
+    
+    // Update position for next time
+    if (direction) {
+        // Moving forward
+        led_position++;
+        if (led_position >= NUM_LEDS) {
+            // Reached the end, reverse direction
+            direction = false;
+            led_position = NUM_LEDS - 2; // Go back to second-to-last position
+            if (led_position < 0) led_position = 0; // Safety check
+        }
+    } else {
+        // Moving backward
+        led_position--;
+        if (led_position < 0) {
+            // Reached the beginning, reverse direction
+            direction = true;
+            led_position = 1; // Go to second position
+            if (led_position >= NUM_LEDS) led_position = NUM_LEDS - 1; // Safety check
+        }
+    }
+}
+
+// Knight Rider effect (3 LEDs moving)
+void LedController::update_knight_rider_pattern() {
+    static int led_position = 0;
+    static bool direction = true; // true = forward, false = backward
+    
+    // Clear all LEDs first
+    clear_all_leds();
+    
+    // Turn on 3 LEDs (the main LED and one on each side if possible)
+    set_led(led_position, true);
+    if (led_position > 0) set_led(led_position - 1, true);
+    if (led_position < NUM_LEDS - 1) set_led(led_position + 1, true);
+    
+    // Update position for next time
+    if (direction) {
+        // Moving forward
+        led_position++;
+        if (led_position >= NUM_LEDS - 1) {
+            // Reached the end, reverse direction
+            direction = false;
+        }
+    } else {
+        // Moving backward
+        led_position--;
+        if (led_position <= 0) {
+            // Reached the beginning, reverse direction
+            direction = true;
+        }
+    }
+}
+
+// Binary counting pattern
+void LedController::update_binary_count_pattern() {
+    // Clear all LEDs first
+    clear_all_leds();
+    
+    // Set LEDs based on counter value (binary representation)
+    for (int i = 0; i < NUM_LEDS; i++) {
+        if (pattern_counter & (1 << i)) {
+            set_led(i, true);
+        }
+    }
+    
+    // Increment counter for next time
+    pattern_counter = (pattern_counter + 1) % (1 << NUM_LEDS);
 }
 
 void LedController::led_task_func(void* pvParameters) {
@@ -111,39 +202,34 @@ void LedController::led_task_func(void* pvParameters) {
     
     ESP_LOGI(led_ctrl->TAG, "LED task started");
     
-    // We have 10 LEDs, so we'll create a simpler pattern
-    // that shifts a single LED back and forth
-    const int num_leds = 10;
-    int led_position = 0;
-    bool direction = true; // true = forward, false = backward
-    
     while (true) {
         if (led_ctrl->blink_mode) {
-            // Clear all LEDs first
-            led_ctrl->clear_all_leds();
-            
-            // Turn on only the current LED
-            led_ctrl->set_led(led_position, true);
-            
-            // Update position for next time
-            if (direction) {
-                // Moving forward
-                led_position++;
-                if (led_position >= num_leds) {
-                    // Reached the end, reverse direction
-                    direction = false;
-                    led_position = num_leds - 2; // Go back to second-to-last position
-                    if (led_position < 0) led_position = 0; // Safety check
-                }
-            } else {
-                // Moving backward
-                led_position--;
-                if (led_position < 0) {
-                    // Reached the beginning, reverse direction
-                    direction = true;
-                    led_position = 1; // Go to second position
-                    if (led_position >= num_leds) led_position = num_leds - 1; // Safety check
-                }
+            // Update pattern based on current mode
+            switch (led_ctrl->current_mode) {
+                case LED_MODE_OFF:
+                    led_ctrl->clear_all_leds();
+                    break;
+                
+                case LED_MODE_SINGLE_SCAN:
+                    led_ctrl->update_single_scan_pattern();
+                    break;
+                
+                case LED_MODE_KNIGHT_RIDER:
+                    led_ctrl->update_knight_rider_pattern();
+                    break;
+                
+                case LED_MODE_BINARY_COUNT:
+                    led_ctrl->update_binary_count_pattern();
+                    break;
+                
+                case LED_MODE_STATIC:
+                    // Do nothing, external code controls the LEDs
+                    break;
+                
+                default:
+                    // Invalid mode, default to off
+                    led_ctrl->clear_all_leds();
+                    break;
             }
         }
         
@@ -156,10 +242,6 @@ void LedController::led_task_func(void* pvParameters) {
 }
 
 void LedController::start_led_task() {
-    while (!initialized) {
-        ESP_LOGW(TAG, "Cannot start LED task: controller not initialized... waiting....");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
     
     if (led_task_handle == nullptr) {
         ESP_LOGI(TAG, "Starting LED task");
@@ -190,4 +272,27 @@ void LedController::set_blink_mode(bool enable) {
         clear_all_leds();
         update_leds();
     }
+}
+
+void LedController::set_mode(led_mode_t mode) {
+    if (mode < LED_MODE_OFF || mode >= LED_MODE_MAX) {
+        ESP_LOGW(TAG, "Invalid LED mode: %d", mode);
+        return;
+    }
+    
+    current_mode = mode;
+    ESP_LOGI(TAG, "LED mode set to: %d", mode);
+    
+    // Reset pattern counters when mode changes
+    pattern_counter = 0;
+}
+
+led_mode_t LedController::get_mode() const {
+    return current_mode;
+}
+
+void LedController::next_mode() {
+    // Cycle to next mode
+    led_mode_t next = static_cast<led_mode_t>((current_mode + 1) % LED_MODE_MAX);
+    set_mode(next);
 } 

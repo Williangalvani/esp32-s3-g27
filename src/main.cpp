@@ -14,6 +14,8 @@
 #include "ffbController.h"
 #include "nvs_flash.h"
 #include "leds.h"  // Include our new LED controller header
+#include "buttons.h" // Include our Button controller header
+#include "shared_pins.h" // Include shared pins header
 // Define M_PI if it's not already defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -199,6 +201,8 @@ WheelController wheel_controller(&ffb_controller);
 // Global instance of our LED controller
 LedController led_controller;
 
+ButtonController button_controller;
+
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
 {
@@ -332,6 +336,9 @@ extern "C" void cpp_app_main(void)
     // }
     // ESP_ERROR_CHECK(ret);
 
+    // Initialize shared pins first
+    shared_pins_init();
+    
     // Initialize the wheel controller
     wheel_controller.init();
     
@@ -342,9 +349,16 @@ extern "C" void cpp_app_main(void)
     // Start position monitoring
     wheel_controller.start_monitoring();
     
-    // Initialize LED controller and start blinking task
+    // Initialize controllers
     led_controller.init();
+    button_controller.init();
+    
+    // // Register button event callback
+    // button_controller.register_callback(button_event_handler);
+    
+    // Start controller tasks
     led_controller.start_led_task();
+    button_controller.start_button_task();
     
     // Initialize TinyUSB
     tinyusb_config_t tusb_cfg = {
