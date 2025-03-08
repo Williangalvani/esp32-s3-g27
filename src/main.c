@@ -37,6 +37,20 @@ static const char *TAG = "g27_wheel";
 #define DEV_REPORT_SIZE (11)    // Size of our HID report (wheel_report structure size)
 #define DEV_FFB_REQUEST_SIZE (7) // Size of force feedback request from host
 
+// Force feedback data structure
+typedef struct __attribute__((packed)) {
+    uint8_t cmd;                // Command byte
+    uint8_t params[6];          // Command parameters
+} g27_ffb_command_t;
+
+// FFB command identifiers
+#define FFB_CMD_AUTOCENTER    0x01
+#define FFB_CMD_FRICTION      0x02
+#define FFB_CMD_DAMPER        0x03
+#define FFB_CMD_SPRING        0x04
+#define FFB_CMD_CONSTANT      0x05
+#define FFB_CMD_PERIODIC      0x06
+
 // G27 Wheel report structure
 typedef struct __attribute__((packed)) {
     uint8_t buttons_0;              // 8 buttons  
@@ -171,6 +185,63 @@ static const tusb_desc_device_t desc_device = {
     .bNumConfigurations = 1
 };
 
+// Callback function for force feedback commands
+void process_ffb_command(const uint8_t *buffer, uint16_t bufsize)
+{
+    // Make sure we have at least one byte for the command
+    if (bufsize < 1) {
+        ESP_LOGW(TAG, "FFB command too short: %d bytes", bufsize);
+        return;
+    }
+    
+    uint8_t cmd = buffer[0];
+    
+    // Log the FFB command in a readable format
+    ESP_LOGI(TAG, "FFB Command 0x%02X received, %d bytes: [%02X %02X %02X %02X %02X %02X %02X]", 
+           cmd, bufsize,
+           bufsize > 0 ? buffer[0] : 0,
+           bufsize > 1 ? buffer[1] : 0,
+           bufsize > 2 ? buffer[2] : 0,
+           bufsize > 3 ? buffer[3] : 0,
+           bufsize > 4 ? buffer[4] : 0,
+           bufsize > 5 ? buffer[5] : 0,
+           bufsize > 6 ? buffer[6] : 0);
+    
+    // Process different FFB commands
+    switch (cmd) {
+        case FFB_CMD_AUTOCENTER:
+            if (bufsize >= 3) {
+                uint8_t enable = buffer[1];
+                uint8_t strength = buffer[2];
+                ESP_LOGI(TAG, "FFB: Autocenter %s, strength %d", 
+                         enable ? "ON" : "OFF", strength);
+                // TODO: Implement autocenter effect
+            }
+            break;
+            
+        case FFB_CMD_CONSTANT:
+            if (bufsize >= 3) {
+                int8_t force = (int8_t)buffer[1]; // Force direction and magnitude
+                uint8_t duration = buffer[2];     // Duration in 10ms units
+                ESP_LOGI(TAG, "FFB: Constant force %d, duration %d0ms", force, duration);
+                // TODO: Implement constant force effect
+            }
+            break;
+            
+        case FFB_CMD_SPRING:
+        case FFB_CMD_DAMPER:
+        case FFB_CMD_FRICTION:
+        case FFB_CMD_PERIODIC:
+            ESP_LOGI(TAG, "FFB: Command 0x%02X not yet implemented", cmd);
+            // TODO: Implement other effects
+            break;
+            
+        default:
+            ESP_LOGW(TAG, "FFB: Unknown command 0x%02X", cmd);
+            break;
+    }
+}
+
 // Task to generate wheel values based on time
 void g27_wheel_task(void *pvParameters)
 {
@@ -222,8 +293,9 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                           hid_report_type_t report_type, const uint8_t *buffer, uint16_t bufsize)
 {
-    // This would handle force feedback data from the host
-    if (report_type == HID_REPORT_TYPE_OUTPUT) {
+    // This handles force feedback data from the host
+    if (report_type == 0) {
+        // Process Force Feedback commands
         ESP_LOGI(TAG, "Force Feedback data received, %d bytes: [%02X %02X %02X %02X %02X %02X %02X]", 
                bufsize,
                bufsize > 0 ? buffer[0] : 0,
@@ -234,8 +306,14 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                bufsize > 5 ? buffer[5] : 0,
                bufsize > 6 ? buffer[6] : 0);
         
-        // Here you would process the force feedback commands
-        // For example, if you have a motor control system or haptic feedback
+        // Process the force feedback commands
+        process_ffb_command(buffer, bufsize);
+    } else if (report_type == HID_REPORT_TYPE_FEATURE) {
+        ESP_LOGI(TAG, "HID Feature report received, ID %d, %d bytes", report_id, bufsize);
+        // You could handle feature reports here if needed
+    } else {
+        ESP_LOGI(TAG, "Unsupported SET_REPORT: ID %d, type %d, size %d", 
+                 report_id, report_type, bufsize);
     }
 }
 
