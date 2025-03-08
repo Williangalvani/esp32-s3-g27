@@ -13,6 +13,7 @@
 #include "ffbTypes.h"
 #include "ffbController.h"
 #include "nvs_flash.h"
+#include "leds.h"  // Include our new LED controller header
 // Define M_PI if it's not already defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -195,6 +196,9 @@ FfbController ffb_controller;
 // Then create the wheel controller with a reference to the FFB controller
 WheelController wheel_controller(&ffb_controller);
 
+// Global instance of our LED controller
+LedController led_controller;
+
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
 {
@@ -320,6 +324,14 @@ extern "C" void cpp_app_main(void)
 {
     ESP_LOGI(TAG, "G27 Racing Wheel Emulation Example");
     
+    // // Initialize NVS
+    // esp_err_t ret = nvs_flash_init();
+    // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    //     ESP_ERROR_CHECK(nvs_flash_erase());
+    //     ret = nvs_flash_init();
+    // }
+    // ESP_ERROR_CHECK(ret);
+
     // Initialize the wheel controller
     wheel_controller.init();
     
@@ -329,6 +341,10 @@ extern "C" void cpp_app_main(void)
     
     // Start position monitoring
     wheel_controller.start_monitoring();
+    
+    // Initialize LED controller and start blinking task
+    led_controller.init();
+    led_controller.start_led_task();
     
     // Initialize TinyUSB
     tinyusb_config_t tusb_cfg = {
