@@ -516,11 +516,11 @@ void WheelController::monitor_task_func(void* pvParameters) {
         
         // Log position occasionally (every ~1 second)
         static int count = 0;
-        if (++count >= 100) {
-            ESP_LOGI(TAG, "Current position: %d, Target: %d", 
-                    position, self->target_position);
-            count = 0;
-        }
+        // if (++count >= 100) {
+        //     ESP_LOGI(TAG, "Current position: %d, Target: %d", 
+        //             position, self->target_position);
+        //     count = 0;
+        // }
         
         // Delay to prevent CPU hogging
         vTaskDelay(pdMS_TO_TICKS(10));

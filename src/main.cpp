@@ -218,7 +218,7 @@ void g27_wheel_task(void *pvParameters)
         // Scale position from -1.0...1.0 to full wheel range
         uint16_t wheel_pos = 0x1FFF + (int16_t)(position * 0x1FFE);
         wheel_report.axis_wheel_msb = (wheel_pos >> 6) & 0xFF;
-        wheel_report.axis_wheel_lsb6_and_btns2 = wheel_pos & 0x3F;
+        wheel_report.axis_wheel_lsb6_and_btns2 = wheel_pos & 0b11111100;
         
         // Read pedal values from analog inputs or other source
         // For now, just using simulated values
@@ -235,23 +235,47 @@ void g27_wheel_task(void *pvParameters)
         uint16_t button_state = button_controller.get_all_buttons();
         
         // Map button states to the report structure
-        // First 8 buttons go into buttons_0
-        wheel_report.buttons_0 = button_state & 0xFF;
+        // first 4 buttons are hat switch, so lets start from 5th button
         
-        // If we have more than 8 buttons, map the rest to buttons_1
-        if (NUM_BUTTONS > 8) {
-            wheel_report.buttons_1 = (button_state >> 8) & 0xFF;
-        }
+        bool left_paddle = button_state & 1;
+        bool right_paddle = button_state & 2;
+        bool right_button_top = button_state & 4;
+        bool right_button_center = button_state & 8;
+        bool right_button_bottom = button_state & 16;
+        bool left_button_top = button_state & 32;
+        bool left_button_center = button_state & 64;
+        bool left_button_bottom = button_state & 128;
         
-        // If we have button states for buttons_2, update it (not implemented yet)
-        // wheel_report.buttons_2 = 0;
+        wheel_report.buttons_0 = (0 << 0) // (hat?) 
+                               | (0 << 1)  // (hat?)
+                               | (0 << 2) // (hat?)
+                               | (0 << 3) // nothing
+                               | (0 << 4) // button 17 (shifter)
+                               | (0 << 5) //  button 18 (shifter)
+                               | (0 << 6) // button 19 shifter
+                               | (0 << 7); // button 16 (shifter)
+
+        wheel_report.buttons_1 = right_paddle
+                               | (left_paddle << 1)
+                               | (right_button_top << 2) // Button 7 (wheel)
+                               | (left_button_top << 3) // Button 8 (wheel)
+                               | (0 << 4) // Button 2 (shifter)
+                               | (0 << 5) // Button 3 (shifter)
+                               | (0 << 6) // Button 4 (shifter)
+                               | (0 << 7); // Button 1 (shifter)
+        wheel_report.buttons_2 = 0
+                               | (0 << 1) // nothing
+                               | (0 << 2) // nothing
+                               | (0 << 3) // nothing
+                               | (0 << 4) // nothing
+                               | (0 << 5) // nothing
+                               | (right_button_center << 6) // Button 20 (wheel)
+                               | (right_button_bottom << 7); // Button 22 (wheel) 
+         
+         wheel_report.axis_wheel_lsb6_and_btns2 = wheel_report.axis_wheel_lsb6_and_btns2 | (left_button_center << 0)
+          | (left_button_bottom << 1);
         
-        // The last 2 bits of axis_wheel_lsb6_and_btns2 can hold 2 more buttons
-        // Preserve the lower 6 bits (wheel position) and update the top 2 bits
-        wheel_report.axis_wheel_lsb6_and_btns2 &= 0x3F; // Clear top 2 bits
-        // Top 2 bits could be set from buttons if needed
-        // For example: wheel_report.axis_wheel_lsb6_and_btns2 |= ((button_state >> 16) & 0x03) << 6;
-        
+
         // Log button state periodically (every ~1 second)
         static int log_counter = 0;
         if (++log_counter >= 100) {

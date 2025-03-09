@@ -182,11 +182,11 @@ float FfbController::update(float axis_wheel_value) {
       }
     }
   }
-  static int print_counter = 0;
-  if (print_counter % 100 == 0) {
-    ESP_LOGI(TAG, "force_current: %d", force_current);
-  }
-  print_counter++;
+  // static int print_counter = 0;
+  // if (print_counter % 100 == 0) {
+  //   ESP_LOGI(TAG, "force_current: %d", force_current);
+  // }
+  // print_counter++;
   return force_current;
 }
 
