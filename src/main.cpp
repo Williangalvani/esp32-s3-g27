@@ -351,7 +351,9 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
     uint8_t param1 = buffer[2];
     uint8_t param2 = buffer[3];
     uint8_t param3 = buffer[4];
+    uint8_t param4 = buffer[5];
     cmd = cmd & 0x0F;
+    uint8_t force_mask = buffer[0] >> 4;
 
   switch ((EnumFfbCmd)cmd) {
     case EnumFfbCmd::SET_DEFAULT_SPRING:
@@ -370,26 +372,40 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
       ESP_LOGI(TAG, "DOWNLOAD_FORCE: %d", param0);
       break;
     case EnumFfbCmd::DOWNLOAD_AND_PLAY_FORCE:
+    {
+      uint8_t force_type = param0;
+      uint8_t force_mask = buffer[0] & 0xF0;
+      ffb_controller.apply_forces(force_mask, (EnumForceType)force_type, buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]);
+      ffb_controller.play_force(force_mask);
       ESP_LOGI(TAG, "DOWNLOAD_AND_PLAY_FORCE: %d", param0);
       break;
+    }
     case EnumFfbCmd::PLAY_FORCE:
-      ESP_LOGI(TAG, "PLAY_FORCE: %d", param0);
+    {
+      uint8_t force_mask = buffer[0] & 0xF0;
+      ffb_controller.play_force(force_mask);
+      ESP_LOGI(TAG, "PLAY_FORCE: %d", force_mask);
       break;
+    }
     case EnumFfbCmd::STOP_FORCE:
-      ESP_LOGI(TAG, "STOP_FORCE: %d", param0);
+    {
+      uint8_t force_mask = buffer[0] & 0xF0;
+      ffb_controller.stop_force(force_mask);
+      ESP_LOGI(TAG, "STOP_FORCE: %d", force_mask);
       break;
+    }
     case EnumFfbCmd::REFRESH_FORCE:
-      ESP_LOGI(TAG, "REFRESH_FORCE: %d", param0);
+      ESP_LOGI(TAG, "REFRESH_FORCE: %d", force_mask);
       break;
     case EnumFfbCmd::FIXED_TIME_LOOP:
-      ESP_LOGI(TAG, "FIXED_TIME_LOOP: %d", param0);
+      ESP_LOGI(TAG, "FIXED_TIME_LOOP: %d", force_mask);
       break;
     case EnumFfbCmd::SET_DEAD_BAND:
-      ESP_LOGI(TAG, "SET_DEAD_BAND: %d", param0);
+      ESP_LOGI(TAG, "SET_DEAD_BAND");
       break;
     case EnumFfbCmd::EXTENDED_COMMAND:
     {
-      uint8_t extended_cmd = param0;
+      uint8_t extended_cmd = buffer[1];
       switch ((EnumExtendedCommand)extended_cmd) {
         case EnumExtendedCommand::CHANGE_MODE_TO_DRIVING_FORCE_PRO:
           ESP_LOGI(TAG, "CHANGE_MODE_TO_DRIVING_FORCE_PRO");

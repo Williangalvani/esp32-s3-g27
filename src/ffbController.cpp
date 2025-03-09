@@ -8,7 +8,7 @@ static const char *TAG = "ffb";
 
 FfbController::FfbController()
   : force_current(0x80),
-    ffb_forces_en{ false, false, false, false },
+    ffb_forces_enabled(0),
     ffb_default_spring_on(false),
     ffb_default_spring_k1(0),
     ffb_default_spring_k2(0),
@@ -74,15 +74,24 @@ void FfbController::printForces() {
 //   }
 // }
 
-void FfbController::apply_forces(EnumForceType force_type, uint8_t force_mask, uint8_t param0, uint8_t param1, uint8_t param2, uint8_t param3) {
-  ffb_forces[force_mask].cmd = 0; // This is a force definition, not a command
-  ffb_forces[force_mask].params[0] = (uint8_t)force_type;
-  ffb_forces[force_mask].params[1] = param0;
-  ffb_forces[force_mask].params[2] = param1;
-  ffb_forces[force_mask].params[3] = param2;
-  ffb_forces[force_mask].params[4] = param3;
-  ffb_forces_en[force_mask] = true;
+void FfbController::apply_forces(uint8_t force_mask, EnumForceType force_type, uint8_t byte2, uint8_t byte3, uint8_t byte4, uint8_t byte5, uint8_t byte6) {
+  ffb_forces[force_mask].forcetype  = 0; // This is a force definition, not a command
+  ffb_forces[force_mask].params[0] = force_mask;
+  ffb_forces[force_mask].params[1] = (uint8_t)force_type;;
+  ffb_forces[force_mask].params[2] = byte2;
+  ffb_forces[force_mask].params[3] = byte3;
+  ffb_forces[force_mask].params[4] = byte4;
+  ffb_forces[force_mask].params[5] = byte5;
+  ffb_forces[force_mask].params[6] = byte6;
 }
+
+void FfbController::play_force(uint8_t force_mask) {
+  ffb_forces_enabled |= force_mask;
+}
+void FfbController::stop_force(uint8_t force_mask) {
+  ffb_forces_enabled &= ~force_mask;
+}
+
 
 float FfbController::calculate_damper_force(uint8_t k1, uint8_t k2, uint8_t s1, uint8_t s2, uint8_t position) {
   static uint8_t last_position = 0;
@@ -117,6 +126,50 @@ float FfbController::apply_force(uint8_t force_index, uint8_t position) {
   uint8_t param2 = ffb_forces[force_index].params[3];
   uint8_t param3 = ffb_forces[force_index].params[4];
 
+  return 0;
+}
+
+float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
+  EnumForceType force_type = (EnumForceType)ffb_forces[force_index].forcetype;
+  uint8_t param0 = ffb_forces[force_index].params[1];
+  uint8_t param1 = ffb_forces[force_index].params[2];
+  uint8_t param2 = ffb_forces[force_index].params[3];
+  uint8_t param3 = ffb_forces[force_index].params[4];
+  switch (force_type) {
+    case EnumForceType::CONSTANT:
+      ESP_LOGI(TAG, "Constant force");
+      return 0;
+    case EnumForceType::SPRING:
+      ESP_LOGI(TAG, "Spring force");
+      return 0;
+    case EnumForceType::DAMPER:
+      ESP_LOGI(TAG, "Damper force");
+      return 0;
+    case EnumForceType::AUTO_CNT_SPRING:
+      ESP_LOGI(TAG, "AutoCntSpring force");
+      return 0;
+    case EnumForceType::SAWTOOTH_UP:
+      ESP_LOGI(TAG, "SawtoothUp force");
+      return 0;
+    case EnumForceType::SAWTOOTH_DN:
+      ESP_LOGI(TAG, "SawtoothDn force");
+      return 0;
+    case EnumForceType::TRAPEZOID:
+      ESP_LOGI(TAG, "Trapezoid force");
+      return 0;
+    case EnumForceType::RECTANGLE:
+      ESP_LOGI(TAG, "Rectangle force");
+      return 0;
+    case EnumForceType::VARIABLE:
+      ESP_LOGI(TAG, "Variable force");
+      return 0;
+    case EnumForceType::RAMP:
+      ESP_LOGI(TAG, "Ramp force");
+      return 0;
+    case EnumForceType::SQUARE_WAVE:
+      ESP_LOGI(TAG, "SquareWave force");
+      return 0;
+  }
   return 0;
 }
 
@@ -177,8 +230,8 @@ float FfbController::update(float axis_wheel_value) {
     }
 
     for (int i = 0; i < 4; i++) {
-      if (ffb_forces_en[i]) {
-        force_current += apply_force(i, position);
+      if (ffb_forces_enabled & (1 << i)) {
+        force_current += evaluate_force(i, position);
       }
     }
   }

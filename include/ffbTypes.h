@@ -67,7 +67,7 @@ union FfbRequest {
   uint8_t bytes[DEV_FFB_REQUEST_SIZE];
   
   struct {
-    uint8_t cmd;
+    uint8_t forcetype;
     uint8_t params[DEV_FFB_REQUEST_SIZE - 1];
   };
 };
