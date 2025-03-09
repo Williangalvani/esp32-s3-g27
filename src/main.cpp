@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include <stdint.h>
 #include <stdlib.h>  // For atoi function
+#include <algorithm> // For std::min, std::max
 #include "wheel_controller.h"  // Include the wheel controller header
 #include "ffbTypes.h"
 #include "ffbController.h"
@@ -17,6 +18,8 @@
 #include "leds.h"  // Include our new LED controller header
 #include "buttons.h" // Include our Button controller header
 #include "shared_pins.h" // Include shared pins header
+#include "driver/adc.h" // Include ADC driver
+#include "esp_adc_cal.h" // Include ADC calibration
 // Define M_PI if it's not already defined
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -45,6 +48,7 @@ static const char *TAG = "g27_wheel";
 #define DEV_REPORT_SIZE (11)    // Size of our HID report (wheel_report structure size)
 #define DEV_FFB_REQUEST_SIZE (7) // Size of force feedback request from host
 
+#define constrain(x, min, max) ((x) < (min) ? (min) : ((x) > (max) ? (max) : (x)))
 // Force feedback data structure
 typedef struct __attribute__((packed)) {
     uint8_t cmd;                // Command byte
@@ -66,9 +70,9 @@ typedef struct __attribute__((packed)) {
     uint8_t buttons_2;              // 8 buttons
     uint8_t axis_wheel_lsb6_and_btns2; // 6 bits lower wheel position + 2 buttons
     uint8_t axis_wheel_msb;         // 8 bits upper wheel position
-    int8_t axis_throttle;           // 8 bits (throttle)
-    int8_t axis_brake;              // 8 bits (brake)
-    int8_t axis_clutch;             // 8 bits (clutch)
+    uint8_t axis_throttle;           // 8 bits (throttle)
+    uint8_t axis_brake;              // 8 bits (brake)
+    uint8_t axis_clutch;             // 8 bits (clutch)
     uint8_t shifter_x;              // Shifter X position
     uint8_t shifter_y;              // Shifter Y position
     uint8_t misc;                   // Miscellaneous data
@@ -204,6 +208,59 @@ LedController led_controller;
 
 ButtonController button_controller;
 
+// Pedal ADC pins
+#define PEDAL_THROTTLE_PIN ADC1_CHANNEL_3 // GPIO4 = ADC1 channel 3
+#define PEDAL_BRAKE_PIN    ADC1_CHANNEL_4 // GPIO5 = ADC1 channel 4
+#define PEDAL_CLUTCH_PIN   ADC1_CHANNEL_5 // GPIO6 = ADC1 channel 5
+
+// ADC attenuation
+#define ADC_ATTEN ADC_ATTEN_DB_11 // 0-3.3V
+
+// Pedal smoothing filter
+#define PEDAL_FILTER_SAMPLES 4
+static int throttle_values[PEDAL_FILTER_SAMPLES] = {0};
+static int brake_values[PEDAL_FILTER_SAMPLES] = {0};
+static int clutch_values[PEDAL_FILTER_SAMPLES] = {0};
+static int pedal_sample_index = 0;
+
+// Simple moving average filter for pedal values
+static int pedal_filter(int new_value, int* filter_array) {
+    filter_array[pedal_sample_index] = new_value;
+    
+    // Calculate average
+    int sum = 0;
+    for (int i = 0; i < PEDAL_FILTER_SAMPLES; i++) {
+        sum += filter_array[i];
+    }
+    return sum / PEDAL_FILTER_SAMPLES;
+}
+
+// Task to monitor pedal values for debugging
+void pedal_debug_task(void *pvParameters)
+{
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t delay_period = pdMS_TO_TICKS(1000); // 1 second delay
+    
+    while (1) {
+        // Log pedal values
+        ESP_LOGI(TAG, "Pedals - Throttle: %d, Brake: %d, Clutch: %d", 
+                 wheel_report.axis_throttle, 
+                 wheel_report.axis_brake, 
+                 wheel_report.axis_clutch);
+                 
+        // Additional logging for raw ADC values if needed
+        int throttle_adc = adc1_get_raw(PEDAL_THROTTLE_PIN);
+        int brake_adc = adc1_get_raw(PEDAL_BRAKE_PIN);
+        int clutch_adc = adc1_get_raw(PEDAL_CLUTCH_PIN);
+        
+        ESP_LOGI(TAG, "ADC Raw - Throttle: %d, Brake: %d, Clutch: %d", 
+                 throttle_adc, brake_adc, clutch_adc);
+
+        // Sleep until next log period
+        vTaskDelayUntil(&last_wake_time, delay_period);
+    }
+}
+
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
 {
@@ -220,16 +277,30 @@ void g27_wheel_task(void *pvParameters)
         wheel_report.axis_wheel_msb = (wheel_pos >> 6) & 0xFF;
         wheel_report.axis_wheel_lsb6_and_btns2 = wheel_pos & 0b11111100;
         
-        // Read pedal values from analog inputs or other source
-        // For now, just using simulated values
-        int64_t time_us = esp_timer_get_time();
-        float time_ms = time_us / 1000.0f;
-        float period_ms = 5000.0f;
-        float angle = (2.0f * M_PI * fmodf(time_ms, period_ms)) / period_ms;
+        // Read pedal values from ADC inputs
+        int throttle_adc = adc1_get_raw(PEDAL_THROTTLE_PIN);
+        int brake_adc = adc1_get_raw(PEDAL_BRAKE_PIN);
+        int clutch_adc = adc1_get_raw(PEDAL_CLUTCH_PIN);
         
-        wheel_report.axis_throttle = 0x7F + (int8_t)(sinf(angle) * 0x7E);
-        wheel_report.axis_brake = 0x7F + (int8_t)(sinf(angle + M_PI/3) * 0x7E);
-        wheel_report.axis_clutch = 0x7F + (int8_t)(sinf(angle + 2*M_PI/3) * 0x7E);
+        // Apply smoothing filter
+        throttle_adc = pedal_filter(throttle_adc, throttle_values);
+        brake_adc = pedal_filter(brake_adc, brake_values);
+        clutch_adc = pedal_filter(clutch_adc, clutch_values);
+        
+        // Update filter index for next sample
+        pedal_sample_index = (pedal_sample_index + 1) % PEDAL_FILTER_SAMPLES;
+        
+        // Convert to voltage if calibration is available
+        uint32_t throttle_mv = 0, brake_mv = 0, clutch_mv = 0;
+        // Map ADC values (0-4095) to pedal range (0-255)
+        float throttle_val = -0.1 + 1.2 * (float)(throttle_adc * 255 / 4095);
+        float brake_val = 1.2* (float)(brake_adc * 255 / 4095);
+        float clutch_val = 1.2* (float)(clutch_adc * 255 / 4095);
+        
+        wheel_report.axis_throttle = constrain(throttle_val, 0, 255);
+        wheel_report.axis_brake = constrain(brake_val, 0, 255);
+        wheel_report.axis_clutch = constrain(clutch_val, 0, 255);
+
         
         // Read button states from our button controller
         uint16_t button_state = button_controller.get_all_buttons();
@@ -275,14 +346,6 @@ void g27_wheel_task(void *pvParameters)
          
          wheel_report.axis_wheel_lsb6_and_btns2 = wheel_report.axis_wheel_lsb6_and_btns2 | (left_button_center << 0)
           | (left_button_bottom << 1);
-        
-
-        // Log button state periodically (every ~1 second)
-        static int log_counter = 0;
-        if (++log_counter >= 100) {
-            ESP_LOGI(TAG, "Button state: 0x%04x", button_state);
-            log_counter = 0;
-        }
         
         // Send the report if USB is ready
         if (tud_hid_ready()) {
@@ -407,6 +470,15 @@ extern "C" void cpp_app_main(void)
     led_controller.init();
     button_controller.init();
     
+    // Initialize ADC for pedal inputs
+    ESP_LOGI(TAG, "Initializing ADC for pedal inputs");
+    
+    // Configure ADC
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(PEDAL_THROTTLE_PIN, ADC_ATTEN);
+    adc1_config_channel_atten(PEDAL_BRAKE_PIN, ADC_ATTEN);
+    adc1_config_channel_atten(PEDAL_CLUTCH_PIN, ADC_ATTEN);
+    
     // // Register button event callback
     // button_controller.register_callback(button_event_handler);
     
@@ -429,5 +501,9 @@ extern "C" void cpp_app_main(void)
     // Create task for wheel updates
     xTaskCreate(g27_wheel_task, "g27_task", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "Wheel task started");
+    
+    // Create task for pedal debugging (comment out in production)
+    xTaskCreate(pedal_debug_task, "pedal_debug", 4096, NULL, 1, NULL);
+    ESP_LOGI(TAG, "Pedal debug task started");
 }
 
