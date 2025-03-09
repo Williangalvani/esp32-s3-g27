@@ -102,22 +102,7 @@ void ButtonController::read_buttons() {
     
     // Update the button state
     button_state = new_state;
-    
-    // // Check for button events and call callback if registered
-    // if (button_callback != nullptr) {
-    //     uint16_t changed = button_state ^ last_button_state;
-    //     for (int i = 0; i < NUM_BUTTONS; i++) {
-    //         if (changed & (1 << i)) {
-    //             bool pressed = (button_state & (1 << i)) != 0;
-    //             // button_callback(i, pressed);
-    //         }
-    //     }
-    // }
-    static int16_t print_limiter = 0;
-    if (print_limiter % 50 == 0) {
-        ESP_LOGI(TAG, "Button state: %d", button_state);
-    }
-    print_limiter++;
+
 }
 
 bool ButtonController::get_button(uint8_t button_num) {

@@ -369,6 +369,7 @@ void WheelController::set_pid_params(float p, float i, float d) {
 void WheelController::set_wheel_range(uint16_t new_range) {
     wheel_range = new_range;
     wheel_range_normalized = wheel_range / 900.0f;
+    ffb_controller->set_wheel_range_normalized(wheel_range_normalized);
     ESP_LOGI(TAG, "Wheel range set to %d degrees (normalized: %.2f)", new_range, wheel_range_normalized);
 }
 

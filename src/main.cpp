@@ -235,32 +235,6 @@ static int pedal_filter(int new_value, int* filter_array) {
     return sum / PEDAL_FILTER_SAMPLES;
 }
 
-// Task to monitor pedal values for debugging
-void pedal_debug_task(void *pvParameters)
-{
-    TickType_t last_wake_time = xTaskGetTickCount();
-    const TickType_t delay_period = pdMS_TO_TICKS(1000); // 1 second delay
-    
-    while (1) {
-        // Log pedal values
-        ESP_LOGI(TAG, "Pedals - Throttle: %d, Brake: %d, Clutch: %d", 
-                 wheel_report.axis_throttle, 
-                 wheel_report.axis_brake, 
-                 wheel_report.axis_clutch);
-                 
-        // Additional logging for raw ADC values if needed
-        int throttle_adc = adc1_get_raw(PEDAL_THROTTLE_PIN);
-        int brake_adc = adc1_get_raw(PEDAL_BRAKE_PIN);
-        int clutch_adc = adc1_get_raw(PEDAL_CLUTCH_PIN);
-        
-        ESP_LOGI(TAG, "ADC Raw - Throttle: %d, Brake: %d, Clutch: %d", 
-                 throttle_adc, brake_adc, clutch_adc);
-
-        // Sleep until next log period
-        vTaskDelayUntil(&last_wake_time, delay_period);
-    }
-}
-
 // Task to generate wheel values based on actual encoder position
 void g27_wheel_task(void *pvParameters)
 {
@@ -414,7 +388,50 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
       ESP_LOGI(TAG, "SET_DEAD_BAND: %d", param0);
       break;
     case EnumFfbCmd::EXTENDED_COMMAND:
-      ESP_LOGI(TAG, "EXTENDED_COMMAND: %d", param0);
+    {
+      uint8_t extended_cmd = param0;
+      switch ((EnumExtendedCommand)extended_cmd) {
+        case EnumExtendedCommand::CHANGE_MODE_TO_DRIVING_FORCE_PRO:
+          ESP_LOGI(TAG, "CHANGE_MODE_TO_DRIVING_FORCE_PRO");
+          break;
+        case EnumExtendedCommand::CHANGE_WHEEL_RANGE_TO_200_DEGREES:
+          ESP_LOGI(TAG, "CHANGE_WHEEL_RANGE_TO_200_DEGREES");
+          break;
+        case EnumExtendedCommand::CHANGE_WHEEL_RANGE_TO_900_DEGREES:
+          ESP_LOGI(TAG, "CHANGE_WHEEL_RANGE_TO_900_DEGREES");
+          break;
+        case EnumExtendedCommand::CHANGE_DEVICE_MODE:
+          ESP_LOGI(TAG, "CHANGE_DEVICE_MODE");
+          break;
+        case EnumExtendedCommand::REVERT_IDENTITY:
+          ESP_LOGI(TAG, "REVERT_IDENTITY");
+          break;
+        case EnumExtendedCommand::SWITCH_TO_G25_IDENTITY_WITH_USB_DETACH:
+          ESP_LOGI(TAG, "SWITCH_TO_G25_IDENTITY_WITH_USB_DETACH");
+          break;
+        case EnumExtendedCommand::SET_RPM_LEDS:
+          ESP_LOGI(TAG, "SET_RPM_LEDS");
+          break;
+        case EnumExtendedCommand::WHEEL_RANGE_CHANGE:
+          {
+            ESP_LOGI(TAG, "WHEEL_RANGE_CHANGE");
+            uint16_t wheel_range = (param1 | param2 << 8);
+            wheel_controller.set_wheel_range(wheel_range);
+          }
+          break;
+        default:
+          ESP_LOGI(TAG, "Unknown extended command: %d", extended_cmd);
+          break;
+      }
+    }
+    break;
+    default:
+      ESP_LOGI(TAG, "Unknown command: %d", cmd);
+      // log as hex
+      ESP_LOGI(TAG, "param0: %d", param0);
+      ESP_LOGI(TAG, "param1: %d", param1);
+      ESP_LOGI(TAG, "param2: %d", param2);
+      ESP_LOGI(TAG, "param3: %d", param3);
       break;
   }
 }
@@ -501,9 +518,6 @@ extern "C" void cpp_app_main(void)
     // Create task for wheel updates
     xTaskCreate(g27_wheel_task, "g27_task", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "Wheel task started");
-    
-    // Create task for pedal debugging (comment out in production)
-    xTaskCreate(pedal_debug_task, "pedal_debug", 4096, NULL, 1, NULL);
-    ESP_LOGI(TAG, "Pedal debug task started");
+
 }
 

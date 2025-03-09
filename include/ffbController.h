@@ -12,6 +12,7 @@ public:
   float update(float axis_wheel_value);
   void set_default_spring(uint8_t k1, uint8_t k2, uint8_t clip);
   void set_default_spring_enabled(bool on) { ffb_default_spring_on = on; }
+  void set_wheel_range_normalized(float wheel_range_normalized) { this->wheel_range_normalized = wheel_range_normalized; }
   void printForces();
   float get_force();
 
