@@ -246,10 +246,11 @@ void g27_wheel_task(void *pvParameters)
         bool left_button_center = button_state & 64;
         bool left_button_bottom = button_state & 128;
         
+        // nice reference: https://gimx.fr/wiki/index.php?title=G27_PS3
         wheel_report.buttons_0 = (0 << 0) // (hat?) 
                                | (0 << 1)  // (hat?)
                                | (0 << 2) // (hat?)
-                               | (0 << 3) // nothing
+                               | (1 << 3) // nothing
                                | (0 << 4) // button 17 (shifter)
                                | (0 << 5) //  button 18 (shifter)
                                | (0 << 6) // button 19 shifter
