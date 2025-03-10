@@ -13,7 +13,9 @@ FfbController::FfbController()
     ffb_default_spring_k1(0),
     ffb_default_spring_k2(0),
     ffb_default_spring_clip(0),
-    wheel_range_normalized(1.0) {
+    wheel_range_normalized(1.0),
+    F0_loop_count(0),
+    F2_loop_count(0) {
   // Initialize ffb_forces
   for (int i = 0; i < 4; i++) {
     memset(&ffb_forces[i], 0, sizeof(FfbRequest));
@@ -75,14 +77,24 @@ void FfbController::printForces() {
 // }
 
 void FfbController::apply_forces(uint8_t force_mask, EnumForceType force_type, uint8_t byte2, uint8_t byte3, uint8_t byte4, uint8_t byte5, uint8_t byte6) {
-  ffb_forces[force_mask].forcetype  = 0; // This is a force definition, not a command
-  ffb_forces[force_mask].params[0] = force_mask;
-  ffb_forces[force_mask].params[1] = (uint8_t)force_type;;
-  ffb_forces[force_mask].params[2] = byte2;
-  ffb_forces[force_mask].params[3] = byte3;
-  ffb_forces[force_mask].params[4] = byte4;
-  ffb_forces[force_mask].params[5] = byte5;
-  ffb_forces[force_mask].params[6] = byte6;
+  // ESP_LOGI(TAG, "force type: %d, force_mask %d", force_type, force_mask);
+  for (int i = 0; i < 4; i++) {
+    if (force_mask & (1 << i)) {
+      // ESP_LOGI(TAG, "force index: %d", i);
+      ffb_forces[i].forcetype  = (uint8_t)force_type;
+      ffb_forces[i].params[0] = force_mask;
+      ffb_forces[i].params[1] = (uint8_t)force_type;
+      ffb_forces[i].params[2] = byte2;
+      ffb_forces[i].params[3] = byte3;
+      ffb_forces[i].params[4] = byte4;
+      ffb_forces[i].params[5] = byte5;
+      ffb_forces[i].params[6] = byte6;
+      if (force_type == EnumForceType::VARIABLE) {
+          F0_loop_count = 0;
+          F2_loop_count = 0;
+      }
+    }
+  }
 }
 
 void FfbController::play_force(uint8_t force_mask) {
@@ -118,57 +130,129 @@ float FfbController::calculate_damper_force(uint8_t k1, uint8_t k2, uint8_t s1, 
   }
 }
 
-float FfbController::apply_force(uint8_t force_index, uint8_t position) {
-  // return a value between -127 and 127
-  uint8_t force_type = ffb_forces[force_index].params[0];
-  uint8_t param0 = ffb_forces[force_index].params[1];
-  uint8_t param1 = ffb_forces[force_index].params[2];
-  uint8_t param2 = ffb_forces[force_index].params[3];
-  uint8_t param3 = ffb_forces[force_index].params[4];
-
-  return 0;
-}
-
 float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
   EnumForceType force_type = (EnumForceType)ffb_forces[force_index].forcetype;
-  uint8_t param0 = ffb_forces[force_index].params[1];
-  uint8_t param1 = ffb_forces[force_index].params[2];
-  uint8_t param2 = ffb_forces[force_index].params[3];
-  uint8_t param3 = ffb_forces[force_index].params[4];
+  uint8_t param0 = ffb_forces[force_index].params[0];
+  uint8_t param1 = ffb_forces[force_index].params[1];
+  uint8_t param2 = ffb_forces[force_index].params[2];
+  uint8_t param3 = ffb_forces[force_index].params[3];
+  uint8_t param4 = ffb_forces[force_index].params[4];
+  uint8_t param5 = ffb_forces[force_index].params[5];
+  uint8_t param6 = ffb_forces[force_index].params[6];
   switch (force_type) {
     case EnumForceType::CONSTANT:
-      ESP_LOGI(TAG, "Constant force");
-      return 0;
+    {
+      ESP_LOGI(TAG, "Force %d: Constant force %d %d %d %d %d %d", force_index, param0, param1, param2, param3, param4, param5);
+      float force = param2 - 127;
+      return force/127.0f;
+    }
     case EnumForceType::SPRING:
-      ESP_LOGI(TAG, "Spring force");
+      ESP_LOGI(TAG, "Force %d: Spring force", force_index);
       return 0;
     case EnumForceType::DAMPER:
-      ESP_LOGI(TAG, "Damper force");
+      ESP_LOGI(TAG, "Force %d: Damper force", force_index);
       return 0;
     case EnumForceType::AUTO_CNT_SPRING:
-      ESP_LOGI(TAG, "AutoCntSpring force");
+      ESP_LOGI(TAG, "Force %d: AutoCntSpring force", force_index);
       return 0;
     case EnumForceType::SAWTOOTH_UP:
-      ESP_LOGI(TAG, "SawtoothUp force");
+      ESP_LOGI(TAG, "Force %d: SawtoothUp force", force_index);
       return 0;
     case EnumForceType::SAWTOOTH_DN:
-      ESP_LOGI(TAG, "SawtoothDn force");
+      ESP_LOGI(TAG, "Force %d: SawtoothDn force", force_index);
       return 0;
     case EnumForceType::TRAPEZOID:
-      ESP_LOGI(TAG, "Trapezoid force");
+      ESP_LOGI(TAG, "Force %d: Trapezoid force", force_index);
       return 0;
     case EnumForceType::RECTANGLE:
-      ESP_LOGI(TAG, "Rectangle force");
+      ESP_LOGI(TAG, "Force %d: Rectangle force", force_index);
       return 0;
     case EnumForceType::VARIABLE:
-      ESP_LOGI(TAG, "Variable force");
-      return 0;
+      {
+      uint8_t L1 = param2;        // Initial level for Force 0
+      uint8_t L2 = param3;        // Initial level for Force 2
+      uint8_t T1 = (param4 & 0xF0) >> 4;  // Force 0 Step duration (in main loops)
+      uint8_t S1 = param4 & 0x0F;         // Force 0 Step size
+      uint8_t T2 = (param5 & 0xF0) >> 4;  // Force 2 Step duration (in main loops)
+      uint8_t S2 = param5 & 0x0F;         // Force 2 Step size
+      uint8_t D1 = param6 & 0x01;         // Force 0 Direction (0=increasing, 1=decreasing)
+      uint8_t D2 = (param6 >> 4) & 0x01;  // Force 2 Direction (0=increasing, 1=decreasing)
+      
+      if (force_index == 0) {
+        // Apply F0
+        int direction = D1 ? 1 : -1;
+        int step_size = S1 * direction;
+        int step_duration = std::max(T1, (uint8_t)1);
+        int current_level = L1;
+        int steps = 0;
+        int new_level = L1 + step_size * (F0_loop_count / step_duration);
+        new_level = std::min(new_level, 255);
+        new_level = std::max(new_level, 0);
+        F0_loop_count++;
+        float force = new_level - 127;
+        return std::max(std::min(force/127.0f, 1.0f), -1.0f);     
+      }
+      else if (force_index == 2) {
+        // Apply F2
+        int direction = D2 ? 1 : -1;
+        int step_size = S2 * direction;
+        int step_duration = std::max(T2, (uint8_t)1);
+        int current_level = L2;
+        int steps = 0;
+        int new_level = L2 + step_size * (F2_loop_count / step_duration);
+        new_level = std::min(new_level, 255);
+        new_level = std::max(new_level, 0);
+        F2_loop_count++;
+        float force = new_level - 127;
+        return std::max(std::min(force/127.0f, 1.0f), -1.0f);
+      }
+      else {
+        return 0;
+      }
+      }
     case EnumForceType::RAMP:
-      ESP_LOGI(TAG, "Ramp force");
+      ESP_LOGI(TAG, "Force %d: Ramp force", force_index);
       return 0;
     case EnumForceType::SQUARE_WAVE:
-      ESP_LOGI(TAG, "SquareWave force");
+      ESP_LOGI(TAG, "Force %d: SquareWave force", force_index);
       return 0;
+    case EnumForceType::HI_RES_SPRING:
+    {
+
+      uint8_t D1 = param2; // deadband lower
+      uint8_t D2 = param3; // deadband upper
+      uint8_t K1 = param4 & 0x0F; // spring coefficient low
+      uint8_t K2 = (param4 >> 4); // spring coefficient high
+      int8_t S1 = param5 & 0x01; // signal direction low
+      int8_t S2 = (param5 >> 4) & 0x01; // signal direction high
+      uint8_t lower_difference = position - D1;
+      uint8_t upper_difference = D2 - position;
+      int8_t direction_1 = S1 ? 1 : -1;
+      int8_t direction_2 = S2 ? 1 : -1;
+
+      float force = 0;
+      bool lower = position < D1;
+      bool upper = position > D2;
+      if (lower) {
+        float spring_coef = float(K1)/100.0;
+        float offset = position - D1;
+        float spring_force = std::min(spring_coef * std::abs((float)(position - D1)), (float)ffb_default_spring_clip);
+        force = -spring_force;        
+      }
+      else if (upper) {
+        float spring_coef = float(K2)/100.0;
+        float offset = position - D2;
+        float spring_force = std::min(spring_coef * std::abs((float)(position - D2)), (float)ffb_default_spring_clip);
+        force = spring_force;        
+      }
+      ESP_LOGI(TAG, "Force %d: HiResSpring force: D1: %d D2: %d K1: %d K2: %d S1: %d S2: %d force: %f, upper: %d, lower: %d", force_index, D1, D2, K1, K2, S1, S2, force, upper, lower);
+      return force;
+    }
+    case EnumForceType::HI_RES_DAMPER:
+    {
+      ESP_LOGI(TAG, "Force %d: HiResDamper force", force_index);
+      return 0;
+    }
   }
   return 0;
 }
@@ -228,18 +312,20 @@ float FfbController::update(float axis_wheel_value) {
       float spring_force = std::min(spring_coef * std::abs((float)(position - dead_band_upper)), (float)ffb_default_spring_clip);
       force_current += spring_force;
     }
-
+  }
     for (int i = 0; i < 4; i++) {
-      if (ffb_forces_enabled & (1 << i)) {
-        force_current += evaluate_force(i, position);
-      }
+    if (ffb_forces_enabled & (1 << i)) {
+
+      force_current += evaluate_force(i, position);
     }
   }
   // static int print_counter = 0;
   // if (print_counter % 100 == 0) {
   //   ESP_LOGI(TAG, "force_current: %d", force_current);
   // }
-  // print_counter++;
+  if (std::abs(force_current) > 0.05) {
+    ESP_LOGI(TAG, ">force_current:%f", force_current);
+  }
   return force_current;
 }
 

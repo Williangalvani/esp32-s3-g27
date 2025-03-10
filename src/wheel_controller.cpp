@@ -212,7 +212,7 @@ void WheelController::move(float force) {
     
     // Calculate PWM value (0-255) based on the absolute value of force
     int pwm = std::abs(force) * 255.0f;
-    int deadband = 150; // Minimum PWM to overcome static friction
+    int deadband = 50; // Minimum PWM to overcome static friction
     
     // Ensure we don't exceed 255 when adding deadband
     int pwm_with_deadband = std::min(deadband + pwm, 255);
@@ -506,7 +506,7 @@ void WheelController::monitor_task_func(void* pvParameters) {
         int16_t position = self->get_position();
         
         // Apply force if motor is enabled and we have a target position
-        int8_t force = 0;
+        float force = 0;
         if (self->ffb_controller != nullptr) {
             // Get position as normalized value (-1.0 to 1.0)
             float wheel_pos = self->get_position_zero_centered_normalized();

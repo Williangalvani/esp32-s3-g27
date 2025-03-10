@@ -374,22 +374,23 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
     case EnumFfbCmd::DOWNLOAD_AND_PLAY_FORCE:
     {
       uint8_t force_type = param0;
-      uint8_t force_mask = buffer[0] & 0xF0;
+      uint8_t force_mask = buffer[0] >> 4;
       ffb_controller.apply_forces(force_mask, (EnumForceType)force_type, buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]);
+      // ESP_LOGI(TAG, "DOWNLOAD_AND_PLAY_FORCE: %d %d %d %d %d %d", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]);
       ffb_controller.play_force(force_mask);
-      ESP_LOGI(TAG, "DOWNLOAD_AND_PLAY_FORCE: %d", param0);
+      // ESP_LOGI(TAG, "DOWNLOAD_AND_PLAY_FORCE: %d", param0);
       break;
     }
     case EnumFfbCmd::PLAY_FORCE:
     {
-      uint8_t force_mask = buffer[0] & 0xF0;
+      uint8_t force_mask = buffer[0] >> 4;
       ffb_controller.play_force(force_mask);
       ESP_LOGI(TAG, "PLAY_FORCE: %d", force_mask);
       break;
     }
     case EnumFfbCmd::STOP_FORCE:
     {
-      uint8_t force_mask = buffer[0] & 0xF0;
+      uint8_t force_mask = buffer[0] >> 4;
       ffb_controller.stop_force(force_mask);
       ESP_LOGI(TAG, "STOP_FORCE: %d", force_mask);
       break;
@@ -426,7 +427,7 @@ void process_ffb_command(const uint8_t *buffer, uint16_t bufsize) {
           ESP_LOGI(TAG, "SWITCH_TO_G25_IDENTITY_WITH_USB_DETACH");
           break;
         case EnumExtendedCommand::SET_RPM_LEDS:
-          ESP_LOGI(TAG, "SET_RPM_LEDS");
+          // ESP_LOGI(TAG, "SET_RPM_LEDS");
           break;
         case EnumExtendedCommand::WHEEL_RANGE_CHANGE:
           {

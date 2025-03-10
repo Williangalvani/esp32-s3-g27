@@ -20,7 +20,7 @@ class FfbController;
 #define ENC_B 14
 
 // PWM configuration
-#define PWM_FREQ        5000    // 5kHz PWM frequency
+#define PWM_FREQ        20000    // 5kHz PWM frequency
 #define PWM_CHANNEL_A   LEDC_CHANNEL_1
 #define PWM_CHANNEL_B   LEDC_CHANNEL_0
 #define PWM_RESOLUTION  LEDC_TIMER_8_BIT  // 8-bit resolution (0-255)

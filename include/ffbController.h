@@ -20,10 +20,9 @@ public:
   void stop_force(uint8_t force_mask);
   float evaluate_force(uint8_t force_index, uint8_t position);
 private:
-  float apply_force(uint8_t force_index, uint8_t position);
   float coeff_from_table(uint8_t offset);
 
-  int8_t force_current;
+  float force_current;
   FfbRequest ffb_forces[4];
   uint8_t ffb_forces_enabled;
   bool ffb_default_spring_on;
@@ -33,4 +32,9 @@ private:
   const uint8_t dead_band_lower = 125;
   const uint8_t dead_band_upper = 131;
   float wheel_range_normalized;
+
+  //RAMP
+  uint8_t F0_loop_count;
+  uint8_t F2_loop_count;
+
 }; 
