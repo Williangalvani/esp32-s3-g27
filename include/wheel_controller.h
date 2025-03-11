@@ -51,9 +51,6 @@ private:
     int32_t right_most;       // Rightmost encoder position detected during homing
     int32_t center;           // Center position calculated during homing
     int32_t range;            // Half the range of motion in encoder counts
-    float wheel_range;        // Wheel rotation range in degrees
-    float wheel_range_normalized; // Normalized wheel range (1.0 = 900 degrees)
-    
     // Task handle for position monitoring
     TaskHandle_t monitor_task_handle;
     
@@ -80,6 +77,9 @@ public:
     // Updated constructor with FfbController reference
     WheelController(FfbController* ffb = nullptr);
     ~WheelController();
+    
+    float wheel_range;        // Wheel rotation range in degrees
+    float wheel_range_normalized; // Normalized wheel range (1.0 = 900 degrees)
     
     // Set the FFB controller reference
     void set_ffb_controller(FfbController* ffb) { ffb_controller = ffb; }

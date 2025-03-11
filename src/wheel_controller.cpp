@@ -161,7 +161,8 @@ float WheelController::get_position_zero_centered() {
     if (range == 0) {
         return 0.0f; // If not homed yet, return center position
     }
-    return -((float)get_encoder_count() - center) / range;
+    float position = -((float)get_encoder_count() - center) / range;
+    return std::clamp(position, -1.0f, 1.0f);
 }
 
 // Same as get_position_zero_centered but can be scaled by wheel_range_normalized

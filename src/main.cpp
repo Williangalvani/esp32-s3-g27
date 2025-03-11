@@ -243,8 +243,8 @@ void g27_wheel_task(void *pvParameters)
     
     while (1) {
         // Get the actual wheel position from the encoder
-        float position = wheel_controller.get_position_zero_centered();
-        
+        float position = wheel_controller.get_position_zero_centered() * (900/wheel_controller.wheel_range);
+        position = std::clamp(position, -1.0f, 1.0f);
         // Calculate wheel position for report (14 bits: 6 in LSB, 8 in MSB)
         // Scale position from -1.0...1.0 to full wheel range
         uint16_t wheel_pos = 0x1FFF + (int16_t)(position * 0x1FFE);
