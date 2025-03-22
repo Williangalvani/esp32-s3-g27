@@ -8,19 +8,20 @@
 #include "esp_rom_sys.h"
 #include "shared_pins.h" // Include shared pins header
 
-// Define pins as gpio_num_t to avoid type conversion errors
-#define BUTTONS_PL_PIN ((gpio_num_t)8)    // SHIFT/LOAD pin (active LOW for parallel load)
-// Using shared shift clock (defined in shared_pins.h)
-#define BUTTONS_CLK_INH_PIN ((gpio_num_t)10) // Clock inhibit pin (CK INH) - optional, can be tied to GND
-#define BUTTONS_Q7_PIN ((gpio_num_t)15)   // Serial data output (QH)
+// Maximum number of buttons supported
+#define MAX_BUTTONS 16
 
-#define SHIFTER_BUTTONS_PL_PIN ((gpio_num_t)41
-#define SHIFTER_BUTTONS_CLK_INH_PIN ((gpio_num_t)39)
+// Default pin definitions for backward compatibility
+#define DEFAULT_BUTTONS_PL_PIN ((gpio_num_t)8)
+#define DEFAULT_BUTTONS_CLK_INH_PIN ((gpio_num_t)10)
+#define DEFAULT_BUTTONS_Q7_PIN ((gpio_num_t)15)
+#define DEFAULT_NUM_BUTTONS 8
+
+// Shifter button pin definitions
+#define SHIFTER_BUTTONS_PL_PIN ((gpio_num_t)41)
+#define SHIFTER_BUTTONS_CLK_PIN ((gpio_num_t)39)  // This is actually the clock pin, not clock inhibit
 #define SHIFTER_BUTTONS_Q7_PIN ((gpio_num_t)40)
-
-
-// Number of buttons to read
-#define NUM_BUTTONS 8
+#define SHIFTER_NUM_BUTTONS 16
 
 class ButtonController {
 private:
@@ -30,12 +31,24 @@ private:
     uint16_t last_button_state; // Previous button state for edge detection
     TaskHandle_t button_task_handle;
     
+    // Configurable pins
+    gpio_num_t pl_pin;          // SHIFT/LOAD pin (active LOW for parallel load)
+    gpio_num_t clk_pin;         // Clock pin (or CLK_INH pin for original controller)
+    gpio_num_t q7_pin;          // Serial data output (QH)
+    uint8_t num_buttons;        // Number of buttons to read (up to MAX_BUTTONS)
+    bool use_as_clock;          // Whether to use clk_pin as clock (true) or as clock inhibit (false)
+    
     static void button_task_func(void* pvParameters);
     void init_gpio();
     void read_buttons();
 
 public:
+    // Default constructor for backward compatibility
     ButtonController();
+    
+    // Constructor with configurable pins and button count
+    // Added use_clock_pin parameter to specify if clk_pin should be used as clock (true) or clock inhibit (false)
+    ButtonController(gpio_num_t pl_pin, gpio_num_t clk_pin, gpio_num_t q7_pin, uint8_t num_buttons = 8, bool use_as_clock = false);
     ~ButtonController();
     
     void init();

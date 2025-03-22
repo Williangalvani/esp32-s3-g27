@@ -206,7 +206,10 @@ WheelController wheel_controller(&ffb_controller);
 // Global instance of our LED controller
 LedController led_controller;
 
+// Button controllers for main buttons and shifter buttons
 ButtonController button_controller;
+// Use SHIFTER_BUTTONS_CLK_PIN as a clock (true for last parameter)
+ButtonController shifter_button_controller(SHIFTER_BUTTONS_PL_PIN, SHIFTER_BUTTONS_CLK_PIN, SHIFTER_BUTTONS_Q7_PIN, SHIFTER_NUM_BUTTONS, true);
 
 // Pedal ADC pins
 #define PEDAL_THROTTLE_PIN ADC1_CHANNEL_3 // GPIO4 = ADC1 channel 3
@@ -279,8 +282,9 @@ void g27_wheel_task(void *pvParameters)
         wheel_report.axis_clutch = constrain(clutch_val, 0, 255);
 
         
-        // Read button states from our button controller
+        // Read button states from our button controllers
         uint16_t button_state = button_controller.get_all_buttons();
+        uint16_t shifter_button_state = shifter_button_controller.get_all_buttons();
         
         // Map button states to the report structure
         // first 4 buttons are hat switch, so lets start from 5th button
@@ -294,36 +298,141 @@ void g27_wheel_task(void *pvParameters)
         bool left_button_center = button_state & 64;
         bool left_button_bottom = button_state & 128;
         
+        // Shifter buttons
+        bool pov_up = shifter_button_state & 1;
+        bool pov_down = shifter_button_state & 2;
+        bool pov_left = shifter_button_state & 4;
+        bool pov_right = shifter_button_state & 8;
+
+        bool button_down = shifter_button_state & 16;
+        bool button_left = shifter_button_state & 32;
+        bool button_right = shifter_button_state & 64;
+        bool button_up = shifter_button_state & 128;
+
+        bool first_red_button = shifter_button_state & 256;
+        bool second_red_button = shifter_button_state & 1024;
+        bool third_red_button = shifter_button_state & 2048; 
+        bool fourth_red_button = shifter_button_state & 512;
+        
+        bool shifter_down = shifter_button_state & 16384;
+
+        // D-Pad/Hat switch encoding
+        uint8_t hat_switch;
+        if (!pov_up && !pov_down && !pov_left && !pov_right) {
+            hat_switch = 8; // Released/centered
+        } else if (pov_up && !pov_down && !pov_left && !pov_right) {
+            hat_switch = 0; // North
+        } else if (pov_up && !pov_down && !pov_left && pov_right) {
+            hat_switch = 1; // Northeast
+        } else if (!pov_up && !pov_down && !pov_left && pov_right) {
+            hat_switch = 2; // East
+        } else if (!pov_up && pov_down && !pov_left && pov_right) {
+            hat_switch = 3; // Southeast
+        } else if (!pov_up && pov_down && !pov_left && !pov_right) {
+            hat_switch = 4; // South
+        } else if (!pov_up && pov_down && pov_left && !pov_right) {
+            hat_switch = 5; // Southwest
+        } else if (!pov_up && !pov_down && pov_left && !pov_right) {
+            hat_switch = 6; // West
+        } else if (pov_up && !pov_down && pov_left && !pov_right) {
+            hat_switch = 7; // Northwest
+        } else {
+            hat_switch = 8; // Default to released for any other combination
+        }
+        
+
+        int neutral_x = 2700;
+        int neutral_y = 2700;
+
+        int shifter_x = shifter_x_adc - neutral_x;
+        int shifter_y = shifter_y_adc - neutral_y;
+
+        shifter_x = std::clamp(shifter_x, -1000, 1000);
+
+        shifter_y = std::clamp(shifter_y, -1000, 1000);
+
+        // Define thresholds for more precise detection
+        const int X_THRESHOLD = 400;  // Threshold for left/right detection
+        const int Y_THRESHOLD = 400;  // Threshold for up/down detection
+        const int NEUTRAL_ZONE = 200; // Smaller threshold for detecting neutral position
+        
+        // Shifter layout for standard H-pattern:
+        //
+        //    Y-
+        //    ^
+        //    |
+        // 2     1
+        // |     |
+        // 4-----3---> X-
+        // |     |
+        // 6/R   5
+        // |
+        // R (with push down)
+        //
+        // Check if shifter is in neutral zone
+        bool in_neutral_x = abs(shifter_x) < NEUTRAL_ZONE;
+        bool in_neutral_y = abs(shifter_y) < NEUTRAL_ZONE;
+        bool in_neutral = in_neutral_x && in_neutral_y;
+        
+        // Top row (gears 1-2)
+        bool gear1 = !in_neutral && shifter_y < -Y_THRESHOLD && shifter_x > X_THRESHOLD;   // Top-right
+        bool gear2 = !in_neutral && shifter_y < -Y_THRESHOLD && shifter_x < -X_THRESHOLD;  // Top-left
+        
+        // Middle row (gears 3-4)
+        bool gear3 = !in_neutral && abs(shifter_y) <= Y_THRESHOLD && shifter_x > X_THRESHOLD;   // Middle-right
+        bool gear4 = !in_neutral && abs(shifter_y) <= Y_THRESHOLD && shifter_x < -X_THRESHOLD;  // Middle-left
+        
+        // Bottom row (gears 5-6)
+        bool gear5 = !in_neutral && shifter_y > Y_THRESHOLD && shifter_x > X_THRESHOLD;   // Bottom-right without push down
+        bool gear6 = !in_neutral && shifter_y > Y_THRESHOLD && shifter_x < -X_THRESHOLD && !shifter_down;  // Bottom-left without push down
+        
+        // Reverse (bottom-left with shifter pushed down)
+        bool reverse = !in_neutral && shifter_down && shifter_y > Y_THRESHOLD && shifter_x < -X_THRESHOLD;
+
+        // No need to check for conflicts since gear6 and reverse are in the same position
+        // but explicitly differentiated by the shifter_down state
+        
+        // Debugging output for shifter positions
+        static int counter = 0;
+        if (counter % 100 == 0) {
+            ESP_LOGI(TAG, "Shifter: X=%d, Y=%d, Down=%d | Neutral=%d | Gears: 1=%d, 2=%d, 3=%d, 4=%d, 5=%d, 6=%d, R=%d, Buttons: %d", 
+                     shifter_x, shifter_y, shifter_down, in_neutral,
+                     gear1, gear2, gear3, gear4, gear5, gear6, reverse, shifter_button_state);
+        }
+        
         // nice reference: https://gimx.fr/wiki/index.php?title=G27_PS3
-        wheel_report.buttons_0 = (0 << 0) // (hat?) 
-                               | (0 << 1)  // (hat?)
-                               | (0 << 2) // (hat?)
-                               | (1 << 3) // nothing
-                               | (0 << 4) // button 17 (shifter)
-                               | (0 << 5) //  button 18 (shifter)
-                               | (0 << 6) // button 19 shifter
-                               | (0 << 7); // button 16 (shifter)
+        wheel_report.buttons_0 = (hat_switch & 0x0F)  // Hat switch value in bits 0-3
+                               | (button_down << 4)   // button 18 (shifter)
+                               | (button_left << 5)   // button 19 shifter
+                               | (button_right << 6)  // button 16 (shifter)
+                               | (button_up << 7);    // button 17 (shifter)
 
         wheel_report.buttons_1 = right_paddle
                                | (left_paddle << 1)
                                | (right_button_top << 2) // Button 7 (wheel)
                                | (left_button_top << 3) // Button 8 (wheel)
-                               | (0 << 4) // Button 2 (shifter)
-                               | (0 << 5) // Button 3 (shifter)
-                               | (0 << 6) // Button 4 (shifter)
-                               | (0 << 7); // Button 1 (shifter)
+                               | (second_red_button << 4) // Button 3 (shifter)
+                               | (first_red_button << 7) // Button 2 (shifter)
+                               | (third_red_button << 5) // Button 4 (shifter)
+                               | (fourth_red_button << 6); // Button 1 (shifter)
         wheel_report.buttons_2 = 0
-                               | (0 << 1) // nothing
-                               | (0 << 2) // nothing
-                               | (0 << 3) // nothing
-                               | (0 << 4) // nothing
-                               | (0 << 5) // nothing
+                               | (gear1 << 0) // nothing
+                               | (gear2 << 1) // nothing
+                               | (gear3 << 2) // nothing
+                               | (gear4 << 3) // nothing
+                               | (gear5 << 4) // nothing
+                               | (gear6 << 5) // nothing
                                | (right_button_center << 6) // Button 20 (wheel)
                                | (right_button_bottom << 7); // Button 22 (wheel) 
          
-         wheel_report.axis_wheel_lsb6_and_btns2 = wheel_report.axis_wheel_lsb6_and_btns2 | (left_button_center << 0)
+        wheel_report.axis_wheel_lsb6_and_btns2 = wheel_report.axis_wheel_lsb6_and_btns2 | (left_button_center << 0)
           | (left_button_bottom << 1);
         
+
+        wheel_report.misc = 0b10011100
+                         | (shifter_down << 0)
+                         | (reverse << 6);
+
         // Send the report if USB is ready
         if (tud_hid_ready()) {
             tud_hid_report(DEV_REPORT_ID, &wheel_report, sizeof(wheel_report));
@@ -331,10 +440,6 @@ void g27_wheel_task(void *pvParameters)
         
         // Run at 10ms intervals (100Hz report rate)
         vTaskDelay(pdMS_TO_TICKS(10));
-        static int counter = 0;
-        if (counter % 20 == 0) {
-            ESP_LOGI(TAG, "Shifter X: %d, Shifter Y: %d", shifter_x_adc, shifter_y_adc);
-        }
         counter++;
     }
 }
@@ -511,6 +616,7 @@ extern "C" void cpp_app_main(void)
     // Initialize controllers
     led_controller.init();
     button_controller.init();
+    shifter_button_controller.init();
     
     // Initialize ADC for pedal inputs
     ESP_LOGI(TAG, "Initializing ADC for pedal inputs");
@@ -529,6 +635,20 @@ extern "C" void cpp_app_main(void)
     // Start controller tasks
     led_controller.start_led_task();
     button_controller.start_button_task();
+    
+    // Add a small delay before starting the second button task
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    shifter_button_controller.start_button_task();
+    
+    // Log GPIO pin mappings for verification
+    ESP_LOGI(TAG, "Main buttons: PL=%d, CLK_INH=%d, Q7=%d", DEFAULT_BUTTONS_PL_PIN, DEFAULT_BUTTONS_CLK_INH_PIN, DEFAULT_BUTTONS_Q7_PIN);
+    ESP_LOGI(TAG, "Shifter buttons: PL=%d, CLK_INH=%d, Q7=%d", SHIFTER_BUTTONS_PL_PIN, SHIFTER_BUTTONS_CLK_PIN, SHIFTER_BUTTONS_Q7_PIN);
+    
+    // GPIO pin check for ESP32-S3 compatibility
+    if (SHIFTER_BUTTONS_PL_PIN > 48 || SHIFTER_BUTTONS_CLK_PIN > 48 || SHIFTER_BUTTONS_Q7_PIN > 48) {
+        ESP_LOGW(TAG, "WARNING: ESP32-S3 has GPIO pins 0-48. Check your shifter pin assignments!");
+    }
     
     // Initialize TinyUSB
     tinyusb_config_t tusb_cfg = {
