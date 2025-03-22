@@ -212,6 +212,8 @@ ButtonController button_controller;
 #define PEDAL_THROTTLE_PIN ADC1_CHANNEL_3 // GPIO4 = ADC1 channel 3
 #define PEDAL_BRAKE_PIN    ADC1_CHANNEL_4 // GPIO5 = ADC1 channel 4
 #define PEDAL_CLUTCH_PIN   ADC1_CHANNEL_5 // GPIO6 = ADC1 channel 5
+#define SHIFTER_X_PIN      ADC1_CHANNEL_8 // GPIO9 = ADC1 channel 8
+#define SHIFTER_Y_PIN      ADC1_CHANNEL_9 // GPIO10 = ADC1 channel 9
 
 // ADC attenuation
 #define ADC_ATTEN ADC_ATTEN_DB_11 // 0-3.3V
@@ -255,7 +257,8 @@ void g27_wheel_task(void *pvParameters)
         int throttle_adc = adc1_get_raw(PEDAL_THROTTLE_PIN);
         int brake_adc = adc1_get_raw(PEDAL_BRAKE_PIN);
         int clutch_adc = adc1_get_raw(PEDAL_CLUTCH_PIN);
-        
+        int shifter_x_adc = adc1_get_raw(SHIFTER_X_PIN);
+        int shifter_y_adc = adc1_get_raw(SHIFTER_Y_PIN);
         // Apply smoothing filter
         throttle_adc = pedal_filter(throttle_adc, throttle_values);
         brake_adc = pedal_filter(brake_adc, brake_values);
@@ -328,6 +331,11 @@ void g27_wheel_task(void *pvParameters)
         
         // Run at 10ms intervals (100Hz report rate)
         vTaskDelay(pdMS_TO_TICKS(10));
+        static int counter = 0;
+        if (counter % 20 == 0) {
+            ESP_LOGI(TAG, "Shifter X: %d, Shifter Y: %d", shifter_x_adc, shifter_y_adc);
+        }
+        counter++;
     }
 }
 
@@ -512,6 +520,8 @@ extern "C" void cpp_app_main(void)
     adc1_config_channel_atten(PEDAL_THROTTLE_PIN, ADC_ATTEN);
     adc1_config_channel_atten(PEDAL_BRAKE_PIN, ADC_ATTEN);
     adc1_config_channel_atten(PEDAL_CLUTCH_PIN, ADC_ATTEN);
+    adc1_config_channel_atten(SHIFTER_X_PIN, ADC_ATTEN);
+    adc1_config_channel_atten(SHIFTER_Y_PIN, ADC_ATTEN);
     
     // // Register button event callback
     // button_controller.register_callback(button_event_handler);

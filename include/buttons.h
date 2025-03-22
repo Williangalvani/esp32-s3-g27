@@ -14,6 +14,11 @@
 #define BUTTONS_CLK_INH_PIN ((gpio_num_t)10) // Clock inhibit pin (CK INH) - optional, can be tied to GND
 #define BUTTONS_Q7_PIN ((gpio_num_t)15)   // Serial data output (QH)
 
+#define SHIFTER_BUTTONS_PL_PIN ((gpio_num_t)41
+#define SHIFTER_BUTTONS_CLK_INH_PIN ((gpio_num_t)39)
+#define SHIFTER_BUTTONS_Q7_PIN ((gpio_num_t)40)
+
+
 // Number of buttons to read
 #define NUM_BUTTONS 8
 
