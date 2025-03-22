@@ -142,7 +142,7 @@ float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
   switch (force_type) {
     case EnumForceType::CONSTANT:
     {
-      ESP_LOGI(TAG, "Force %d: Constant force %d %d %d %d %d %d", force_index, param0, param1, param2, param3, param4, param5);
+      // ESP_LOGI(TAG, "Force %d: Constant force %d %d %d %d %d %d", force_index, param0, param1, param2, param3, param4, param5);
       float force = param2 - 127;
       return force/127.0f;
     }
