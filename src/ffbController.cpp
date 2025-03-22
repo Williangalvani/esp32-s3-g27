@@ -182,29 +182,30 @@ float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
         // Apply F0
         int direction = D1 ? 1 : -1;
         int step_size = S1 * direction;
-        int step_duration = std::max(T1, (uint8_t)1);
+        int step_duration = std::clamp(T1, (uint8_t)1, (uint8_t)255);
         int current_level = L1;
         int steps = 0;
-        int new_level = L1 + step_size * (F0_loop_count / step_duration);
-        new_level = std::min(new_level, 255);
-        new_level = std::max(new_level, 0);
+        // not actually variable for now
+        int new_level = L1;// + step_size * ((float)F0_loop_count / (float)step_duration);
+        new_level = std::clamp(new_level, 0, 255);
         F0_loop_count++;
         float force = new_level - 127;
-        return std::max(std::min(force/127.0f, 1.0f), -1.0f);     
+
+
+        return std::clamp(force/127.0f, -1.0f, 1.0f);
       }
       else if (force_index == 2) {
         // Apply F2
         int direction = D2 ? 1 : -1;
         int step_size = S2 * direction;
-        int step_duration = std::max(T2, (uint8_t)1);
+        int step_duration = std::clamp(T2, (uint8_t)1, (uint8_t)255);
         int current_level = L2;
         int steps = 0;
-        int new_level = L2 + step_size * (F2_loop_count / step_duration);
-        new_level = std::min(new_level, 255);
-        new_level = std::max(new_level, 0);
+        int new_level = L2;// + step_size * ((float)F2_loop_count / (float)step_duration);
+        new_level = std::clamp(new_level, 0, 255);
         F2_loop_count++;
         float force = new_level - 127;
-        return std::max(std::min(force/127.0f, 1.0f), -1.0f);
+        return std::clamp(force/127.0f, -1.0f, 1.0f);
       }
       else {
         return 0;
@@ -223,7 +224,13 @@ float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
       uint8_t D2 = param3; // deadband upper
       uint8_t K1 = param4 & 0x0F; // spring coefficient low
       uint8_t K2 = (param4 >> 4); // spring coefficient high
-      int8_t S1 = param5 & 0x01; // signal direction low
+      int8_t S1 = param5 & 0x01; // signal direction      // printf(">f%dD1: %d\n", force_index, D1);
+      // printf(">f%dD2: %d\n", force_index, D2);
+      // printf(">f%dK1: %d\n", force_index, K1);
+      // printf(">f%dK2: %d\n", force_index, K2);
+      // printf(">f%dS1: %d\n", force_index, S1);
+      // printf(">f%dS2: %d\n", force_index, S2);
+      // printf(">f%dforce: %f\n", force_index, force); low
       int8_t S2 = (param5 >> 4) & 0x01; // signal direction high
       uint8_t lower_difference = position - D1;
       uint8_t upper_difference = D2 - position;
@@ -245,7 +252,14 @@ float FfbController::evaluate_force(uint8_t force_index, uint8_t position) {
         float spring_force = std::min(spring_coef * std::abs((float)(position - D2)), (float)ffb_default_spring_clip);
         force = spring_force;        
       }
-      ESP_LOGI(TAG, "Force %d: HiResSpring force: D1: %d D2: %d K1: %d K2: %d S1: %d S2: %d force: %f, upper: %d, lower: %d", force_index, D1, D2, K1, K2, S1, S2, force, upper, lower);
+      //ESP_LOGI(TAG, "Force %d: HiResSpring force: D1: %d D2: %d K1: %d K2: %d S1: %d S2: %d force: %f, upper: %d, lower: %d", force_index, D1, D2, K1, K2, S1, S2, force, upper, lower);
+      // printf(">f%dD1: %d\n", force_index, D1);
+      // printf(">f%dD2: %d\n", force_index, D2);
+      // printf(">f%dK1: %d\n", force_index, K1);
+      // printf(">f%dK2: %d\n", force_index, K2);
+      // printf(">f%dS1: %d\n", force_index, S1);
+      // printf(">f%dS2: %d\n", force_index, S2);
+      // printf(">f%dforce: %f\n", force_index, force);
       return force;
     }
     case EnumForceType::HI_RES_DAMPER:
@@ -324,7 +338,7 @@ float FfbController::update(float axis_wheel_value) {
   //   ESP_LOGI(TAG, "force_current: %d", force_current);
   // }
   if (std::abs(force_current) > 0.05) {
-    ESP_LOGI(TAG, ">force_current:%f", force_current);
+    printf(">force_current:%f\n", force_current);
   }
   return force_current;
 }
